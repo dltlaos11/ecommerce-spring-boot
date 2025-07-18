@@ -30,12 +30,18 @@ dependencyManagement {
 }
 
 dependencies {
-    // Spring
+    // Spring Boot 기본
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-web")
+	
+	// Swagger/OpenAPI - 새로 추가
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
+	
+	// Validation - 새로 추가
+	implementation("org.springframework.boot:spring-boot-starter-validation")
 
-    // DB
+    // Database
 	runtimeOnly("com.mysql:mysql-connector-j")
 
     // Test
