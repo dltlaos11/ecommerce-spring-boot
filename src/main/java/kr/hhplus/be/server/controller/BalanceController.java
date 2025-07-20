@@ -3,6 +3,7 @@ package kr.hhplus.be.server.controller;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.web.bind.annotation.*;
 
@@ -21,7 +22,6 @@ public class BalanceController implements BalanceApiSpec {
   @GetMapping("/{userId}/balance")
   @Override
   public CommonResponse<BalanceResponse> getBalance(@PathVariable Long userId) {
-    // Record 방식 생성자 사용 (순서 주의)
     BalanceResponse balance = new BalanceResponse(
         userId,
         new BigDecimal("50000.00"),
@@ -35,10 +35,9 @@ public class BalanceController implements BalanceApiSpec {
       @PathVariable Long userId,
       @Valid @RequestBody ChargeBalanceRequest request) {
 
-    // Record의 accessor 메서드 사용 (getAmount() 대신 amount())
     BigDecimal previousBalance = new BigDecimal("50000.00");
     BigDecimal currentBalance = previousBalance.add(request.amount());
-    String transactionId = "tx_" + System.currentTimeMillis();
+    String transactionId = generateTransactionId();
 
     ChargeBalanceResponse response = new ChargeBalanceResponse(
         userId,
@@ -69,5 +68,15 @@ public class BalanceController implements BalanceApiSpec {
         .stream().limit(limit).toList();
 
     return CommonResponse.success(history);
+  }
+
+  /**
+   * 고유한 거래 ID 생성
+   * 
+   * 시스템 시간과 UUID를 조합하여 중복 방지를 보장한다.
+   * 실제 운영에서는 분산 환경에서도 고유성이 보장되는 방식으로 구현한다.
+   */
+  private String generateTransactionId() {
+    return "TXN_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
   }
 }
