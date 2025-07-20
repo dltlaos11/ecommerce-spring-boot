@@ -3,13 +3,15 @@ package kr.hhplus.be.server.controller;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -25,67 +27,100 @@ import kr.hhplus.be.server.dto.coupon.IssuedCouponResponse;
 @Tag(name = "쿠폰 관리", description = "쿠폰 발급 및 조회 API")
 public class CouponController {
 
+  /**
+   * Mock 데이터: 사용자별 발급받은 쿠폰 추적
+   * 실제 구현에서는 데이터베이스에서 관리
+   */
+  private final ConcurrentHashMap<String, Boolean> issuedCoupons = new ConcurrentHashMap<>();
+  private final AtomicInteger couponCount = new AtomicInteger(95); // 초기 남은 수량
+
   @PostMapping("/{couponId}/issue")
   @Operation(summary = "선착순 쿠폰 발급", description = "선착순으로 쿠폰을 발급받습니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "201", description = "발급 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "201", description = "발급 성공", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "쿠폰 발급 성공", value = """
           {
             "success": true,
             "data": {
-              "userCouponId": 123,
+              "userCouponId": 1721480000000,
               "couponId": 1,
               "userId": 1,
               "couponName": "10% 할인 쿠폰",
               "discountType": "PERCENTAGE",
               "discountValue": 10.00,
-              "expiredAt": "2025-07-24T10:30:00",
-              "issuedAt": "2025-07-17T10:30:00",
+              "expiredAt": "2025-07-27T10:30:00",
+              "issuedAt": "2025-07-20T10:30:00",
               "status": "AVAILABLE"
             },
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """))),
-      @ApiResponse(responseCode = "404", description = "쿠폰을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "404", description = "쿠폰을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "쿠폰 없음", value = """
           {
             "success": false,
-            "data": null,
             "error": {
               "code": "COUPON_NOT_FOUND",
               "message": "쿠폰을 찾을 수 없습니다."
             },
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """))),
-      @ApiResponse(responseCode = "409", description = "이미 발급받았거나 품절", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": false,
-            "data": null,
-            "error": {
-              "code": "COUPON_ALREADY_ISSUED",
-              "message": "이미 발급받은 쿠폰이거나 품절되었습니다."
-            },
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """)))
+      @ApiResponse(responseCode = "409", description = "이미 발급받았거나 품절", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = {
+          @ExampleObject(name = "중복 발급", value = """
+              {
+                "success": false,
+                "error": {
+                  "code": "COUPON_ALREADY_ISSUED",
+                  "message": "이미 발급받은 쿠폰입니다."
+                },
+                "timestamp": "2025-07-20T10:30:00"
+              }
+              """),
+          @ExampleObject(name = "쿠폰 품절", value = """
+              {
+                "success": false,
+                "error": {
+                  "code": "COUPON_EXHAUSTED",
+                  "message": "선착순 쿠폰이 모두 소진되었습니다."
+                },
+                "timestamp": "2025-07-20T10:30:00"
+              }
+              """)
+      }))
   })
-  @ResponseStatus(HttpStatus.CREATED)
   public CommonResponse<IssuedCouponResponse> issueCoupon(
       @Parameter(description = "쿠폰 ID", example = "1") @PathVariable Long couponId,
       @Valid @RequestBody IssueCouponRequest request) {
 
-    // Mock 데이터 생성
+    // 1. 쿠폰 존재 여부 확인 (404 에러 시뮬레이션)
+    if (couponId > 3) {
+      return CommonResponse.error("COUPON_NOT_FOUND", "쿠폰을 찾을 수 없습니다.");
+    }
+
+    // 2. 쿠폰 품절 확인 (409 에러 시뮬레이션)
+    if (couponCount.get() <= 0) {
+      return CommonResponse.error("COUPON_EXHAUSTED", "선착순 쿠폰이 모두 소진되었습니다.");
+    }
+
+    // 3. 중복 발급 확인 (409 에러 시뮬레이션)
+    String userCouponKey = request.userId() + "_" + couponId;
+    if (issuedCoupons.containsKey(userCouponKey)) {
+      return CommonResponse.error("COUPON_ALREADY_ISSUED", "이미 발급받은 쿠폰입니다.");
+    }
+
+    // 4. 쿠폰 발급 처리 (성공 케이스)
+    issuedCoupons.put(userCouponKey, true);
+    couponCount.decrementAndGet();
+
     IssuedCouponResponse response = new IssuedCouponResponse(
-        System.currentTimeMillis(), // 고유 ID 생성
+        System.currentTimeMillis(),
         couponId,
-        request.getUserId(),
+        request.userId(),
         getCouponName(couponId),
         getCouponDiscountType(couponId),
         getCouponDiscountValue(couponId),
-        LocalDateTime.now().plusDays(7), // 7일 후 만료
+        LocalDateTime.now().plusDays(7),
         LocalDateTime.now(),
-        "AVAILABLE" // status
-    );
+        "AVAILABLE");
 
     return CommonResponse.success(response);
   }
@@ -93,41 +128,10 @@ public class CouponController {
   @GetMapping("/available")
   @Operation(summary = "발급 가능한 쿠폰 목록 조회", description = "현재 발급 가능한 쿠폰 목록을 조회합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": true,
-            "data": [
-              {
-                "id": 1,
-                "name": "10% 할인 쿠폰",
-                "discountType": "PERCENTAGE",
-                "discountValue": 10.00,
-                "maxDiscountAmount": 50000.00,
-                "minimumOrderAmount": 100000.00,
-                "remainingQuantity": 95,
-                "totalQuantity": 100,
-                "expiredAt": "2025-07-24T23:59:59"
-              },
-              {
-                "id": 2,
-                "name": "5000원 할인 쿠폰",
-                "discountType": "FIXED",
-                "discountValue": 5000.00,
-                "maxDiscountAmount": null,
-                "minimumOrderAmount": 50000.00,
-                "remainingQuantity": 150,
-                "totalQuantity": 200,
-                "expiredAt": "2025-07-27T23:59:59"
-              }
-            ],
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """)))
+      @ApiResponse(responseCode = "200", description = "조회 성공")
   })
   public CommonResponse<List<AvailableCouponResponse>> getAvailableCoupons() {
 
-    // Mock 데이터 생성 (minimumOrderAmount 필드 추가)
     List<AvailableCouponResponse> coupons = List.of(
         new AvailableCouponResponse(
             1L,
@@ -135,8 +139,8 @@ public class CouponController {
             "PERCENTAGE",
             new BigDecimal("10.00"),
             new BigDecimal("50000.00"),
-            new BigDecimal("100000.00"), // 최소 주문 금액 추가
-            95,
+            new BigDecimal("100000.00"),
+            couponCount.get(), // 실시간 수량 반영
             100,
             LocalDateTime.now().plusDays(7)),
         new AvailableCouponResponse(
@@ -145,7 +149,7 @@ public class CouponController {
             "FIXED",
             new BigDecimal("5000.00"),
             null,
-            new BigDecimal("50000.00"), // 최소 주문 금액 추가
+            new BigDecimal("50000.00"),
             150,
             200,
             LocalDateTime.now().plusDays(10)),
@@ -155,7 +159,7 @@ public class CouponController {
             "PERCENTAGE",
             new BigDecimal("15.00"),
             new BigDecimal("100000.00"),
-            new BigDecimal("200000.00"), // 최소 주문 금액 추가
+            new BigDecimal("200000.00"),
             25,
             50,
             LocalDateTime.now().plusDays(14)));
@@ -166,55 +170,27 @@ public class CouponController {
   @GetMapping("/users/{userId}")
   @Operation(summary = "사용자 보유 쿠폰 조회", description = "사용자가 보유한 쿠폰 목록을 조회합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": true,
-            "data": [
-              {
-                "userCouponId": 123,
-                "couponId": 1,
-                "userId": 1,
-                "couponName": "10% 할인 쿠폰",
-                "discountType": "PERCENTAGE",
-                "discountValue": 10.00,
-                "expiredAt": "2025-07-24T10:30:00",
-                "issuedAt": "2025-07-16T10:30:00",
-                "status": "AVAILABLE"
-              },
-              {
-                "userCouponId": 124,
-                "couponId": 2,
-                "userId": 1,
-                "couponName": "5000원 할인 쿠폰",
-                "discountType": "FIXED",
-                "discountValue": 5000.00,
-                "expiredAt": "2025-07-27T10:30:00",
-                "issuedAt": "2025-07-15T10:30:00",
-                "status": "USED"
-              }
-            ],
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """))),
-      @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "200", description = "조회 성공"),
+      @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "사용자 없음", value = """
           {
             "success": false,
-            "data": null,
             "error": {
               "code": "USER_NOT_FOUND",
               "message": "사용자를 찾을 수 없습니다."
             },
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """)))
   })
   public CommonResponse<List<IssuedCouponResponse>> getUserCoupons(
       @Parameter(description = "사용자 ID", example = "1") @PathVariable Long userId,
-      @Parameter(description = "쿠폰 상태 필터", example = "AVAILABLE") @RequestParam(required = false) @Schema(allowableValues = {
-          "AVAILABLE", "USED", "EXPIRED" }) String status) {
+      @Parameter(description = "쿠폰 상태 필터", example = "AVAILABLE") @RequestParam(required = false) String status) {
 
-    // 전체 Mock 데이터 생성
+    // 사용자 존재 여부 확인 (404 에러 시뮬레이션)
+    if (userId > 100) {
+      return CommonResponse.error("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.");
+    }
+
     List<IssuedCouponResponse> allCoupons = List.of(
         new IssuedCouponResponse(
             123L,
@@ -243,22 +219,36 @@ public class CouponController {
             "15% 할인 쿠폰",
             "PERCENTAGE",
             new BigDecimal("15.00"),
-            LocalDateTime.now().minusDays(1), // 만료된 쿠폰
+            LocalDateTime.now().minusDays(1),
             LocalDateTime.now().minusDays(5),
             "EXPIRED"));
 
-    // status 파라미터로 필터링 적용
     List<IssuedCouponResponse> filteredCoupons = allCoupons;
     if (status != null && !status.trim().isEmpty()) {
       filteredCoupons = allCoupons.stream()
-          .filter(coupon -> status.equalsIgnoreCase(coupon.getStatus()))
+          .filter(coupon -> status.equalsIgnoreCase(coupon.status()))
           .toList();
     }
 
     return CommonResponse.success(filteredCoupons);
   }
 
-  // Mock 헬퍼 메서드들
+  /**
+   * 쿠폰 수량 리셋 (테스트용)
+   */
+  @PostMapping("/reset")
+  @Operation(summary = "쿠폰 수량 리셋", description = "테스트를 위해 쿠폰 수량을 리셋합니다.")
+  public CommonResponse<String> resetCoupons() {
+    issuedCoupons.clear();
+    couponCount.set(95);
+    return CommonResponse.success("쿠폰 수량이 리셋되었습니다.");
+  }
+
+  /**
+   * Mock 헬퍼 메서드들
+   * 
+   * 실제 구현 시에는 CouponService에서 데이터베이스로부터 조회한다.
+   */
   private String getCouponName(Long couponId) {
     return switch (couponId.intValue()) {
       case 1 -> "10% 할인 쿠폰";
