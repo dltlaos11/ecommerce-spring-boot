@@ -1,4 +1,4 @@
-# E-커머스 서비스 ERD 설계
+# E-커머스 서비스 ERD 설계 (일관된 락 전략)
 
 ## ERD 다이어그램
 
@@ -16,7 +16,7 @@ erDiagram
         bigint id PK
         bigint user_id FK
         decimal balance "15,2"
-        bigint version "낙관적 락"
+        bigint version "낙관적 락 - 충돌 빈도 낮음"
         timestamp created_at
         timestamp updated_at
     }
@@ -36,7 +36,6 @@ erDiagram
         varchar name
         decimal price "10,2"
         int stock_quantity
-        bigint version "낙관적 락"
         timestamp created_at
         timestamp updated_at
     }
@@ -50,7 +49,6 @@ erDiagram
         int issued_quantity
         decimal max_discount_amount "10,2"
         decimal minimum_order_amount "10,2 DEFAULT 0"
-        bigint version "선착순 제어 DEFAULT 0"
         timestamp expired_at
         timestamp created_at
         timestamp updated_at
@@ -131,47 +129,72 @@ erDiagram
     PRODUCTS ||--o{ ORDER_ITEMS : "ordered_in"
 ```
 
-### 📊 주요 인덱스 정보
+## 📊 최적화된 인덱스 전략
+
+### 핵심 비즈니스 로직 기반 필수 인덱스만 선별
 
 ```sql
--- 성능 최적화를 위한 인덱스 설계
-
--- 사용자 관련
+-- 1. 고빈도 조회 패턴 기반 인덱스
 CREATE UNIQUE INDEX idx_users_email ON users(email);
 CREATE UNIQUE INDEX idx_user_balances_user_id ON user_balances(user_id);
-CREATE INDEX idx_balance_histories_user_created ON balance_histories(user_id, created_at);
+CREATE UNIQUE INDEX idx_orders_order_number ON orders(order_number);
+CREATE UNIQUE INDEX idx_payments_order_id ON payments(order_id);
 
--- 상품 관련
-CREATE INDEX idx_products_name ON products(name);
-CREATE INDEX idx_products_price ON products(price);
-
--- 쿠폰 관련
-CREATE INDEX idx_coupons_expired_at ON coupons(expired_at);
-CREATE INDEX idx_coupon_availability ON coupons(expired_at, issued_quantity);
-CREATE INDEX idx_user_coupons_user_status ON user_coupons(user_id, status);
+-- 2. 동시성 제어 필수 인덱스
 CREATE UNIQUE INDEX idx_user_coupon_unique ON user_coupons(user_id, coupon_id);
 
--- 주문 관련
-CREATE INDEX idx_orders_user_id ON orders(user_id);
-CREATE UNIQUE INDEX idx_orders_order_number ON orders(order_number);
-CREATE INDEX idx_orders_status_created ON orders(status, created_at);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
-
--- 주문 상품 관련 (인기 상품 통계용)
-CREATE INDEX idx_order_items_order_id ON order_items(order_id);
-CREATE INDEX idx_order_items_product_id ON order_items(product_id);
-CREATE INDEX idx_order_items_product_created ON order_items(product_id, created_at);
+-- 3. 핵심 비즈니스 조회 성능 인덱스
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at);
 CREATE INDEX idx_order_items_created_product ON order_items(created_at, product_id);
 
--- 결제 관련
-CREATE UNIQUE INDEX idx_payments_order_id ON payments(order_id);
-CREATE INDEX idx_payments_user_id ON payments(user_id);
-CREATE INDEX idx_payments_status_created ON payments(status, created_at);
-
--- 데이터 플랫폼 이벤트 관련
-CREATE INDEX idx_data_events_status_created ON data_platform_events(status, created_at);
-CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
+-- 4. 쿠폰 발급 성능 인덱스
+CREATE INDEX idx_coupons_availability ON coupons(expired_at, issued_quantity, total_quantity);
 ```
+
+### 인덱스 선별 기준
+
+**제거된 인덱스와 이유:**
+
+- `idx_products_name`, `idx_products_price`: 상품 검색 빈도가 낮고, 풀스캔으로도 충분
+- `idx_balance_histories_user_created`: 페이징 없이 최근 N개만 조회하므로 불필요
+- `idx_user_coupons_user_status`: 사용자당 쿠폰 개수가 적어 풀스캔 가능
+- 기타 세부 조회용 인덱스: 실제 쿼리 패턴 확인 후 필요시 추가
+
+**유지된 인덱스와 이유:**
+
+- **유니크 인덱스**: 데이터 무결성 보장 및 중복 방지
+- **동시성 제어**: 선착순 쿠폰, 중복 발급 방지
+- **핵심 조회**: 주문 목록, 인기 상품 통계 등 고빈도 조회
+
+## 🔒 일관된 락 전략
+
+### 비즈니스 특성에 맞는 락 선택
+
+**1. 잔액 관리 → 낙관적 락**
+
+- 이유: 동일 사용자의 동시 결제 빈도가 낮음
+- 구현: `user_balances.version` 컬럼 사용
+- 장점: 성능 우수, 데드락 없음
+
+**2. 재고 관리 → 비관적 락 (SELECT FOR UPDATE)**
+
+- 이유: 인기 상품의 동시 주문 시 정확한 재고 차감 필요
+- 구현: 애플리케이션 레벨에서 SELECT FOR UPDATE 사용
+- 장점: 데이터 정합성 보장
+
+**3. 쿠폰 발급 → 분산 락 + 비관적 락**
+
+- 이유: 선착순 특성상 절대적 순서 보장 필요
+- 구현: Redis/Database 기반 분산 락 + SELECT FOR UPDATE
+- 장점: 다중 인스턴스 환경에서도 안전
+
+### 락 전략 결정 기준
+
+| 도메인 | 동시성 빈도 | 정합성 중요도 | 선택된 락 | 이유               |
+| ------ | ----------- | ------------- | --------- | ------------------ |
+| 잔액   | 낮음        | 높음          | 낙관적 락 | 성능과 안전성 균형 |
+| 재고   | 높음        | 매우 높음     | 비관적 락 | 오버셀링 절대 방지 |
+| 쿠폰   | 매우 높음   | 매우 높음     | 분산 락   | 선착순 정확성 보장 |
 
 ## 주요 설계 원칙
 
@@ -187,22 +210,42 @@ CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
 
 **심화 요구사항 대응**
 
-- 재고 관리: `products.version` (낙관적 락)
-- 동시성 이슈: 버전 컬럼 및 인덱스 전략
-- 다중 인스턴스: 외래 키 제약 없이 논리적 관계만 표현
+- 재고 관리: 비관적 락으로 오버셀링 방지
+- 동시성 이슈: 도메인별 최적화된 락 전략
+- 다중 인스턴스: 분산 락으로 선착순 쿠폰 처리
 
-### 2. 동시성 제어 전략
+### 2. 동시성 제어 전략 상세
 
-**낙관적 락 (Optimistic Lock) 적용**
+**낙관적 락 (Optimistic Lock)**
 
-- `user_balances.version`: 잔액 동시 수정 방지
-- `products.version`: 재고 동시 수정 방지
-- `coupons.version`: 선착순 쿠폰 발급 제어
+```sql
+-- 잔액 업데이트 시
+UPDATE user_balances
+SET balance = balance + ?, version = version + 1
+WHERE user_id = ? AND version = ?
+```
 
-**비관적 락 적용 고려 지점**
+**비관적 락 (Pessimistic Lock)**
 
-- 쿠폰 발급 시 `coupons.issued_quantity` 수정
-- 재고 차감 시 `products.stock_quantity` 수정
+```sql
+-- 재고 확인 및 차감 시
+SELECT stock_quantity FROM products WHERE id = ? FOR UPDATE;
+UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?;
+```
+
+**분산 락 (Distributed Lock)**
+
+```java
+// 쿠폰 발급 시 (Redis 기반)
+String lockKey = "coupon:issue:" + couponId;
+if (redisLock.tryLock(lockKey, 10, TimeUnit.SECONDS)) {
+    try {
+        // 쿠폰 발급 로직
+    } finally {
+        redisLock.unlock(lockKey);
+    }
+}
+```
 
 ### 3. 정규화 vs 비정규화 전략
 
@@ -210,33 +253,13 @@ CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
 
 - 기본 엔티티 구조 (users, products, coupons)
 - 트랜잭션 데이터 정합성 보장
-- 데이터 중복 최소화
 
 **비정규화 적용**
 
 - `order_items.product_name`, `order_items.product_price`: 주문 시점 데이터 보존
 - `balance_histories.balance_after`: 조회 성능 향상
-- 히스토리성 데이터의 무결성 보장
 
-### 4. 인덱스 전략
-
-**조회 성능 최적화**
-
-- `user_balances`: user_id 유니크 인덱스
-- `orders`: created_at 인덱스 (통계 조회용)
-- `order_items`: 복합 인덱스 (인기상품 통계용)
-
-**동시성 처리 최적화**
-
-- `coupons`: (expired_at, issued_quantity) 복합 인덱스
-- `user_coupons`: (user_id, coupon_id) 유니크 인덱스 (중복 발급 방지)
-
-**범위 조회 최적화**
-
-- 날짜 기반 조회를 위한 created_at 인덱스
-- 사용자별 데이터 조회를 위한 user_id 인덱스
-
-### 5. 확장성 고려사항
+### 4. 확장성 고려사항
 
 **샤딩 준비**
 
@@ -246,7 +269,7 @@ CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
 **외래 키 제약 관리**
 
 - 물리적 외래 키 제약 없음 (운영 편의성)
-- 논리적 관계만 주석으로 표현
+- 논리적 관계만 ERD에 표현
 - 애플리케이션 레벨에서 무결성 관리
 
 **이벤트 기반 아키텍처 준비**
@@ -255,31 +278,27 @@ CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
 - 재시도 메커니즘 포함
 - 추후 Kafka/Redis 도입 시 확장 가능
 
-### 6. 데이터 타입 선택 근거
+### 5. 데이터 타입 선택 근거
 
 **금액 필드: decimal(15,2)**
 
 - 소수점 이하 2자리까지 정확한 계산
 - 최대 999조원까지 표현 가능
-- 금융 도메인의 정확성 요구사항 충족
 
 **상태 필드: varchar**
 
 - ENUM 대신 varchar 사용으로 확장성 확보
 - 애플리케이션 레벨에서 검증
-- 새로운 상태 추가 시 스키마 변경 불필요
 
 **ID 필드: bigint**
 
 - 대용량 데이터 처리 대비
-- 오버플로우 걱정 없는 충분한 범위
 - 글로벌 서비스 확장 고려
 
 **버전 필드: bigint**
 
 - 낙관적 락을 위한 버전 관리
 - 동시성 제어의 핵심 메커니즘
-- 롱런(Long-run) 서비스 운영 고려
 
 ## 특별 고려사항
 
@@ -287,7 +306,7 @@ CREATE INDEX idx_data_events_order_id ON data_platform_events(order_id);
 
 - `minimum_order_amount` 필드 추가로 비즈니스 룰 지원
 - 유니크 인덱스로 중복 발급 원천 차단
-- 버전 컬럼으로 동시 발급 제어
+- 분산 락으로 다중 인스턴스 환경에서 동시 발급 제어
 
 ### 2. 인기 상품 통계 최적화
 
