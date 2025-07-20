@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -24,36 +25,7 @@ public class ProductController {
   @GetMapping
   @Operation(summary = "상품 목록 조회", description = "상품 목록을 조회합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": true,
-            "data": [
-              {
-                "id": 1,
-                "name": "고성능 노트북",
-                "price": 1500000.00,
-                "stockQuantity": 10,
-                "createdAt": "2025-07-07T10:30:00"
-              },
-              {
-                "id": 2,
-                "name": "무선 마우스",
-                "price": 50000.00,
-                "stockQuantity": 50,
-                "createdAt": "2025-07-12T10:30:00"
-              },
-              {
-                "id": 3,
-                "name": "기계식 키보드",
-                "price": 150000.00,
-                "stockQuantity": 25,
-                "createdAt": "2025-07-14T10:30:00"
-              }
-            ],
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """)))
+      @ApiResponse(responseCode = "200", description = "조회 성공")
   })
   public CommonResponse<List<ProductResponse>> getProducts(
       @Parameter(description = "상품명 검색", example = "노트북") @RequestParam(required = false) String name,
@@ -69,26 +41,26 @@ public class ProductController {
         new ProductResponse(5L, "HD 웹캠", new BigDecimal("80000.00"), 30, LocalDateTime.now().minusDays(2)),
         new ProductResponse(6L, "게이밍 노트북", new BigDecimal("2500000.00"), 5, LocalDateTime.now().minusDays(1)));
 
-    // 파라미터별 필터링 적용
+    // 파라미터별 필터링 적용 (Record accessor 메서드 사용)
     List<ProductResponse> filteredProducts = allProducts.stream()
         .filter(product -> {
-          // 상품명 필터링
+          // 상품명 필터링 - getName() → name()
           if (name != null && !name.trim().isEmpty()) {
-            return product.getName().toLowerCase().contains(name.toLowerCase());
+            return product.name().toLowerCase().contains(name.toLowerCase());
           }
           return true;
         })
         .filter(product -> {
-          // 최소 가격 필터링
+          // 최소 가격 필터링 - getPrice() → price()
           if (minPrice != null) {
-            return product.getPrice().compareTo(minPrice) >= 0;
+            return product.price().compareTo(minPrice) >= 0;
           }
           return true;
         })
         .filter(product -> {
-          // 최대 가격 필터링
+          // 최대 가격 필터링 - getPrice() → price()
           if (maxPrice != null) {
-            return product.getPrice().compareTo(maxPrice) <= 0;
+            return product.price().compareTo(maxPrice) <= 0;
           }
           return true;
         })
@@ -100,29 +72,15 @@ public class ProductController {
   @GetMapping("/{productId}")
   @Operation(summary = "상품 상세 조회", description = "특정 상품의 상세 정보를 조회합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": true,
-            "data": {
-              "id": 1,
-              "name": "고성능 노트북",
-              "price": 1500000.00,
-              "stockQuantity": 10,
-              "createdAt": "2025-07-07T10:30:00"
-            },
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """))),
-      @ApiResponse(responseCode = "404", description = "상품을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "200", description = "조회 성공"),
+      @ApiResponse(responseCode = "404", description = "상품을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "상품 없음", value = """
           {
             "success": false,
-            "data": null,
             "error": {
               "code": "PRODUCT_NOT_FOUND",
               "message": "상품을 찾을 수 없습니다."
             },
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """)))
   })
