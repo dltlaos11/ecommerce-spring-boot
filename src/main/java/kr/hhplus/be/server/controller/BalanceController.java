@@ -7,6 +7,11 @@ import java.util.UUID;
 
 import org.springframework.web.bind.annotation.*;
 
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
 import kr.hhplus.be.server.common.response.CommonResponse;
 import kr.hhplus.be.server.controller.spec.BalanceApiSpec;
@@ -21,6 +26,29 @@ public class BalanceController implements BalanceApiSpec {
 
   @GetMapping("/{userId}/balance")
   @Override
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "잔액 조회 성공", value = """
+          {
+            "success": true,
+            "data": {
+              "userId": 1,
+              "balance": 50000.00,
+              "lastUpdated": "2025-07-20T10:30:00"
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """))),
+      @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "사용자 없음", value = """
+          {
+            "success": false,
+            "error": {
+              "code": "USER_NOT_FOUND",
+              "message": "사용자를 찾을 수 없습니다."
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """)))
+  })
   public CommonResponse<BalanceResponse> getBalance(@PathVariable Long userId) {
     BalanceResponse balance = new BalanceResponse(
         userId,
@@ -31,6 +59,41 @@ public class BalanceController implements BalanceApiSpec {
 
   @PostMapping("/{userId}/balance/charge")
   @Override
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "충전 성공", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "잔액 충전 성공", value = """
+          {
+            "success": true,
+            "data": {
+              "userId": 1,
+              "previousBalance": 50000.00,
+              "chargedAmount": 30000.00,
+              "currentBalance": 80000.00,
+              "transactionId": "TXN_1721124600000_A1B2C3D4"
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """))),
+      @ApiResponse(responseCode = "400", description = "잘못된 충전 금액", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "잘못된 금액", value = """
+          {
+            "success": false,
+            "error": {
+              "code": "INVALID_CHARGE_AMOUNT",
+              "message": "충전 금액이 올바르지 않습니다."
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """))),
+      @ApiResponse(responseCode = "409", description = "동시성 충돌", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "동시성 충돌", value = """
+          {
+            "success": false,
+            "error": {
+              "code": "BALANCE_CONCURRENCY_ERROR",
+              "message": "동시 처리로 인한 충돌이 발생했습니다. 다시 시도해주세요."
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """)))
+  })
   public CommonResponse<ChargeBalanceResponse> chargeBalance(
       @PathVariable Long userId,
       @Valid @RequestBody ChargeBalanceRequest request) {
@@ -50,6 +113,38 @@ public class BalanceController implements BalanceApiSpec {
 
   @GetMapping("/{userId}/balance/history")
   @Override
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "잔액 이력 조회 성공", value = """
+          {
+            "success": true,
+            "data": [
+              {
+                "transactionType": "CHARGE",
+                "amount": 50000.00,
+                "balanceAfter": 100000.00,
+                "createdAt": "2025-07-19T10:30:00"
+              },
+              {
+                "transactionType": "PAYMENT",
+                "amount": -30000.00,
+                "balanceAfter": 70000.00,
+                "createdAt": "2025-07-19T15:30:00"
+              }
+            ],
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """))),
+      @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "사용자 없음", value = """
+          {
+            "success": false,
+            "error": {
+              "code": "USER_NOT_FOUND",
+              "message": "사용자를 찾을 수 없습니다."
+            },
+            "timestamp": "2025-07-20T10:30:00"
+          }
+          """)))
+  })
   public CommonResponse<List<BalanceHistoryResponse>> getBalanceHistory(
       @PathVariable Long userId,
       @RequestParam(defaultValue = "10") int limit) {
