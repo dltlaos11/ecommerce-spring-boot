@@ -1,5 +1,10 @@
 package kr.hhplus.be.server.common.exception;
 
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter
+@RequiredArgsConstructor
 public enum ErrorCode {
     // 공통 에러
     INVALID_PARAMETER("INVALID_PARAMETER", "잘못된 요청 파라미터입니다."),
@@ -46,17 +51,4 @@ public enum ErrorCode {
 
     private final String code;
     private final String message;
-
-    ErrorCode(String code, String message) {
-        this.code = code;
-        this.message = message;
-    }
-
-    public String getCode() {
-        return code;
-    }
-
-    public String getMessage() {
-        return message;
-    }
 }
