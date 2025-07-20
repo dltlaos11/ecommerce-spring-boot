@@ -31,12 +31,21 @@ public class CommonResponse<T> {
         this.timestamp = timestamp;
     }
 
-    // 성공 응답 - error는 반드시 null
+    /**
+     * 성공 응답 생성
+     * 
+     * @param data 응답 데이터 (error는 자동으로 null 처리)
+     */
     public static <T> CommonResponse<T> success(T data) {
         return new CommonResponse<>(true, data, null, LocalDateTime.now());
     }
 
-    // 실패 응답 - data는 반드시 null
+    /**
+     * 실패 응답 생성
+     * 
+     * @param code    에러 코드
+     * @param message 에러 메시지 (data는 자동으로 null 처리)
+     */
     public static <T> CommonResponse<T> error(String code, String message) {
         ErrorResponse errorResponse = new ErrorResponse(code, message);
         return new CommonResponse<>(false, null, errorResponse, LocalDateTime.now());
