@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -30,18 +31,18 @@ public class OrderController {
   @PostMapping
   @Operation(summary = "주문 생성 및 결제", description = "상품을 주문하고 결제를 처리합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "201", description = "주문 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "201", description = "주문 성공", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "주문 생성 성공", value = """
           {
             "success": true,
             "data": {
               "orderId": 1001,
-              "orderNumber": "ORD-20250717-001",
+              "orderNumber": "ORD-20250720-001",
               "userId": 1,
               "totalAmount": 3050000.00,
               "discountAmount": 305000.00,
               "finalAmount": 2745000.00,
               "status": "COMPLETED",
-              "createdAt": "2025-07-17T10:30:00",
+              "createdAt": "2025-07-20T10:30:00",
               "items": [
                 {
                   "productId": 1,
@@ -59,53 +60,63 @@ public class OrderController {
                 }
               ]
             },
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """))),
-      @ApiResponse(responseCode = "400", description = "잘못된 주문 정보", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "400", description = "잘못된 주문 정보", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "주문 검증 실패", value = """
           {
             "success": false,
-            "data": null,
             "error": {
               "code": "VALIDATION_ERROR",
               "message": "주문 상품은 최소 1개 이상이어야 합니다."
             },
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """))),
-      @ApiResponse(responseCode = "409", description = "재고 부족 또는 잔액 부족", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": false,
-            "data": null,
-            "error": {
-              "code": "INSUFFICIENT_STOCK",
-              "message": "재고가 부족합니다."
-            },
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """)))
+      @ApiResponse(responseCode = "409", description = "재고 부족 또는 잔액 부족", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = {
+          @ExampleObject(name = "재고 부족", value = """
+              {
+                "success": false,
+                "error": {
+                  "code": "INSUFFICIENT_STOCK",
+                  "message": "재고가 부족합니다."
+                },
+                "timestamp": "2025-07-20T10:30:00"
+              }
+              """),
+          @ExampleObject(name = "잔액 부족", value = """
+              {
+                "success": false,
+                "error": {
+                  "code": "INSUFFICIENT_BALANCE",
+                  "message": "잔액이 부족합니다."
+                },
+                "timestamp": "2025-07-20T10:30:00"
+              }
+              """)
+      }))
   })
   @ResponseStatus(HttpStatus.CREATED)
   public CommonResponse<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
 
-    BigDecimal totalAmount = calculateTotalAmount(request.getItems());
-    BigDecimal discountAmount = request.getCouponId() != null ? totalAmount.multiply(new BigDecimal("0.1"))
+    // Record의 accessor 메서드 사용
+    BigDecimal totalAmount = calculateTotalAmount(request.items());
+    BigDecimal discountAmount = request.couponId() != null ? totalAmount.multiply(new BigDecimal("0.1"))
         : BigDecimal.ZERO;
     BigDecimal finalAmount = totalAmount.subtract(discountAmount);
 
     // 주문 상품 목록 Mock 데이터 생성
-    List<OrderItemResponse> items = request.getItems().stream()
+    List<OrderItemResponse> items = request.items().stream()
         .map(item -> {
-          String productName = getProductName(item.getProductId());
-          BigDecimal productPrice = getProductPrice(item.getProductId());
-          BigDecimal subtotal = productPrice.multiply(new BigDecimal(item.getQuantity()));
+          String productName = getProductName(item.productId());
+          BigDecimal productPrice = getProductPrice(item.productId());
+          BigDecimal subtotal = productPrice.multiply(new BigDecimal(item.quantity()));
 
           return new OrderItemResponse(
-              item.getProductId(),
+              item.productId(),
               productName,
               productPrice,
-              item.getQuantity(),
+              item.quantity(),
               subtotal);
         })
         .toList();
@@ -113,57 +124,29 @@ public class OrderController {
     OrderResponse response = new OrderResponse(
         1001L,
         "ORD-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-001",
-        request.getUserId(),
+        request.userId(),
         totalAmount,
         discountAmount,
         finalAmount,
         "COMPLETED",
         LocalDateTime.now(),
-        items // order_items
-    );
+        items);
 
     return CommonResponse.success(response);
   }
 
-  // 주문 상세 조회
   @GetMapping("/{orderId}")
   @Operation(summary = "주문 상세 조회", description = "특정 주문의 상세 정보를 조회합니다.")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
-          {
-            "success": true,
-            "data": {
-              "orderId": 1001,
-              "orderNumber": "ORD-20250717-001",
-              "userId": 1,
-              "totalAmount": 3050000.00,
-              "discountAmount": 305000.00,
-              "finalAmount": 2745000.00,
-              "status": "COMPLETED",
-              "createdAt": "2025-07-17T08:30:00",
-              "items": [
-                {
-                  "productId": 1,
-                  "productName": "고성능 노트북",
-                  "productPrice": 1500000.00,
-                  "quantity": 2,
-                  "subtotal": 3000000.00
-                }
-              ]
-            },
-            "error": null,
-            "timestamp": "2025-07-17T10:30:00"
-          }
-          """))),
-      @ApiResponse(responseCode = "404", description = "주문을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(type = "object", example = """
+      @ApiResponse(responseCode = "200", description = "조회 성공"),
+      @ApiResponse(responseCode = "404", description = "주문을 찾을 수 없음", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class), examples = @ExampleObject(name = "주문 없음", value = """
           {
             "success": false,
-            "data": null,
             "error": {
               "code": "ORDER_NOT_FOUND",
               "message": "주문을 찾을 수 없습니다."
             },
-            "timestamp": "2025-07-17T10:30:00"
+            "timestamp": "2025-07-20T10:30:00"
           }
           """)))
   })
@@ -177,7 +160,7 @@ public class OrderController {
 
     OrderResponse response = new OrderResponse(
         orderId,
-        "ORD-20250716-001",
+        "ORD-20250720-001",
         1L,
         new BigDecimal("3050000.00"),
         new BigDecimal("305000.00"),
@@ -189,12 +172,16 @@ public class OrderController {
     return CommonResponse.success(response);
   }
 
-  // OrderItemRequest의 데이터는 내부적으로만 활용
-  private BigDecimal calculateTotalAmount(java.util.List<OrderItemRequest> items) {
+  /**
+   * Mock 헬퍼 메서드들
+   * 
+   * 실제 구현에서는 ProductService에서 데이터베이스로부터 조회한다.
+   */
+  private BigDecimal calculateTotalAmount(List<OrderItemRequest> items) {
     return items.stream()
         .map(item -> {
-          BigDecimal price = getProductPrice(item.getProductId());
-          return price.multiply(new BigDecimal(item.getQuantity()));
+          BigDecimal price = getProductPrice(item.productId());
+          return price.multiply(new BigDecimal(item.quantity()));
         })
         .reduce(BigDecimal.ZERO, BigDecimal::add);
   }
