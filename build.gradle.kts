@@ -35,13 +35,13 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-web")
 	
-	// Swagger/OpenAPI
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
+	// Swagger/OpenAPI - 버전 업그레이드로 호환성 문제 해결
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 	
 	// Validation
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 
-	// Lombok (새로 추가)
+	// Lombok
 	compileOnly("org.projectlombok:lombok")
 	annotationProcessor("org.projectlombok:lombok")
 
@@ -55,7 +55,7 @@ dependencies {
 	testImplementation("org.testcontainers:mysql")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	
-	// Test Lombok (새로 추가)
+	// Test Lombok
 	testCompileOnly("org.projectlombok:lombok")
 	testAnnotationProcessor("org.projectlombok:lombok")
 }

@@ -3,12 +3,11 @@ package kr.hhplus.be.server.common.response;
 import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonInclude;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "공통 API 응답")
-@JsonInclude(JsonInclude.Include.NON_NULL) // null 값은 JSON에 포함하지 않음
+// @JsonInclude(JsonInclude.Include.NON_NULL) // null 값은 JSON에 포함하지 않음
 public class CommonResponse<T> {
 
     @Schema(description = "성공 여부", example = "true")

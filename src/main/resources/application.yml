@@ -3,25 +3,8 @@ spring:
     name: hhplus
   profiles:
     active: local
-  # datasource:
-  #   name: HangHaePlusDataSource
-  #   type: com.zaxxer.hikari.HikariDataSource
-  #   hikari:
-  #     maximum-pool-size: 3
-  #     connection-timeout: 10000
-  #     max-lifetime: 60000
-  #   driver-class-name: com.mysql.cj.jdbc.Driver
-  # jpa:
-  #   open-in-view: false
-  #   generate-ddl: false
-  #   show-sql: false
-  #   hibernate:
-  #     ddl-auto: none
-  #   properties:
-  #     hibernate.timezone.default_storage: NORMALIZE_UTC
-  #     hibernate.jdbc.time_zone: UTC
 
-# Swagger/OpenAPI 설정 추가
+# Swagger/OpenAPI 설정
 springdoc:
   api-docs:
     path: /api-docs
@@ -40,11 +23,11 @@ springdoc:
   default-consumes-media-type: application/json
   default-produces-media-type: application/json
 
----
-# spring.config.activate.on-profile: local, test
-
-# spring:
-#   datasource:
-#     url: jdbc:mysql://localhost:3306/hhplus?characterEncoding=UTF-8&serverTimezone=UTC
-#     username: application
-#     password: application
+# 로깅 설정 (개발 편의를 위해 추가)
+logging:
+  level:
+    kr.hhplus.be.server: DEBUG
+    org.springframework.transaction: DEBUG
+# 📝 참고:
+# JPA, 데이터베이스 관련 설정을 모두 제거했습니다.
+# 인메모리 저장소(ConcurrentHashMap)를 사용할 예정이므로 불필요합니다.
