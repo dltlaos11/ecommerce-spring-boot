@@ -1,4 +1,4 @@
-package kr.hhplus.be.server.dto.coupon;
+package kr.hhplus.be.server.coupon.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -7,7 +7,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "사용 가능한 쿠폰 정보")
+@Schema(description = "발급 가능한 쿠폰 정보")
 public record AvailableCouponResponse(
         @Schema(description = "쿠폰 ID", example = "1") Long id,
 
@@ -26,5 +26,5 @@ public record AvailableCouponResponse(
 
         @Schema(description = "총 수량", example = "100") Integer totalQuantity,
 
-        @Schema(description = "만료일", example = "2025-07-23T23:59:59") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime expiredAt){
+        @Schema(description = "만료일", example = "2025-07-31T23:59:59") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime expiredAt){
 }

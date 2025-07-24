@@ -1,4 +1,4 @@
-package kr.hhplus.be.server.dto.coupon;
+package kr.hhplus.be.server.coupon.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,9 +22,13 @@ public record IssuedCouponResponse(
 
         @Schema(description = "할인 값", example = "10.00") BigDecimal discountValue,
 
-        @Schema(description = "쿠폰 만료일", example = "2025-07-23T23:59:59") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime expiredAt,
+        @Schema(description = "최대 할인 금액", example = "50000.00") BigDecimal maxDiscountAmount,
 
-        @Schema(description = "발급 시간", example = "2025-07-16T10:30:00") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime issuedAt,
+        @Schema(description = "최소 주문 금액", example = "100000.00") BigDecimal minimumOrderAmount,
+
+        @Schema(description = "쿠폰 만료일", example = "2025-07-31T23:59:59") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime expiredAt,
+
+        @Schema(description = "발급 시간", example = "2025-07-25T10:30:00") @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss") LocalDateTime issuedAt,
 
         @Schema(description = "쿠폰 상태", example = "AVAILABLE", allowableValues = { "AVAILABLE", "USED",
                 "EXPIRED" }) String status){
