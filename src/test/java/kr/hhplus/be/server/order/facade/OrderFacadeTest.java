@@ -1,3 +1,4 @@
+// OrderFacadeTest.java - 완전 수정된 버전
 package kr.hhplus.be.server.order.facade;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,23 +31,12 @@ import kr.hhplus.be.server.product.exception.InsufficientStockException;
 import kr.hhplus.be.server.product.service.ProductService;
 
 /**
- * OrderFacade 단위 테스트
+ * OrderFacade 단위 테스트 - 완전 수정된 버전
  * 
- * 테스트 전략:
- * - Mock을 활용한 여러 도메인 서비스 격리
- * - Facade 패턴의 복합 워크플로우 검증
- * - 성공/실패 시나리오 모두 검증
- * - 도메인 서비스 간 상호작용 검증
- * 
- * STEP05 테스트 범위:
- * - 주문 생성 워크플로우 (재고확인 → 쿠폰적용 → 결제 → 주문생성)
- * - 실패 시나리오 (재고부족, 잔액부족, 쿠폰오류)
- * - 도메인 서비스 호출 순서 및 횟수 검증
- * - 주문 조회 기능 (위임 패턴 검증)
- * 
- * STEP06 제외 기능:
- * - 주문 취소 및 보상 트랜잭션 (STEP06에서 구현)
- * - 동시성 제어 관련 테스트
+ * 수정사항:
+ * 1. createOrderWithProductInfo 메서드 시그니처 적용
+ * 2. productService.getProduct() 호출 횟수 정확히 계산
+ * 3. 모든 Mock 검증을 실제 구현에 맞게 수정
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("OrderFacade 단위 테스트 (STEP05)")
@@ -82,7 +73,12 @@ class OrderFacadeTest {
 
                 // Order Service Mock 설정
                 OrderResponse expectedResponse = createTestOrderResponse(1L, "ORD-123", new BigDecimal("2000000"));
-                when(orderService.createOrder(any(), any(), any(), any())).thenReturn(expectedResponse);
+                when(orderService.createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class))).thenReturn(expectedResponse);
 
                 // When
                 OrderResponse response = orderFacade.createOrder(request);
@@ -92,13 +88,23 @@ class OrderFacadeTest {
                 assertThat(response.orderNumber()).isEqualTo("ORD-123");
                 assertThat(response.finalAmount()).isEqualByComparingTo(new BigDecimal("2000000"));
 
-                // 🔍 도메인 서비스 호출 검증
-                verify(productService, times(2)).getProduct(1L); // 재고 확인 + 금액 계산
+                // 🔍 도메인 서비스 호출 검증 - 정확한 횟수로 수정
+                // OrderFacade에서 getProduct()는 다음 위치에서 호출됨:
+                // 1. validateProductStock() - 각 상품별로 1번씩
+                // 2. calculateTotalAmount() - 각 상품별로 1번씩
+                // 3. getProductInfoMap() - 각 상품별로 1번씩
+                // 총 3번 호출됨 (상품 ID 1이 수량 2개이지만 같은 상품이므로 1번만)
+                verify(productService, times(3)).getProduct(1L);
                 verify(productService).hasEnoughStock(1L, 2);
                 verify(balanceService).hasEnoughBalance(eq(1L), any(BigDecimal.class));
                 verify(balanceService).deductBalance(eq(1L), any(BigDecimal.class), any(String.class));
                 verify(productService).reduceStock(1L, 2);
-                verify(orderService).createOrder(any(), any(), any(), any());
+                verify(orderService).createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class));
 
                 // 쿠폰 서비스는 호출되지 않아야 함
                 verify(couponService, never()).validateAndCalculateDiscount(any(), any(), any());
@@ -129,7 +135,12 @@ class OrderFacadeTest {
 
                 // Order Service Mock 설정
                 OrderResponse expectedResponse = createTestOrderResponse(1L, "ORD-123", new BigDecimal("1800000"));
-                when(orderService.createOrder(any(), any(), any(), any())).thenReturn(expectedResponse);
+                when(orderService.createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class))).thenReturn(expectedResponse);
 
                 // When
                 OrderResponse response = orderFacade.createOrder(request);
@@ -141,6 +152,9 @@ class OrderFacadeTest {
                 // 🔍 쿠폰 관련 서비스 호출 검증
                 verify(couponService).validateAndCalculateDiscount(1L, 101L, new BigDecimal("2000000"));
                 verify(couponService).useCoupon(1L, 101L, new BigDecimal("2000000"));
+
+                // getProduct 호출 검증 (쿠폰 있을 때도 동일)
+                verify(productService, times(3)).getProduct(1L);
         }
 
         @Test
@@ -158,9 +172,10 @@ class OrderFacadeTest {
                                 .isInstanceOf(InsufficientStockException.class);
 
                 // 🔍 재고 검증 후 중단되므로 후속 서비스들은 호출되지 않아야 함
+                verify(productService).getProduct(1L); // 재고 검증 단계에서만 호출
                 verify(productService).hasEnoughStock(1L, 2);
                 verify(balanceService, never()).hasEnoughBalance(any(), any());
-                verify(orderService, never()).createOrder(any(), any(), any(), any());
+                verify(orderService, never()).createOrderWithProductInfo(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -179,9 +194,10 @@ class OrderFacadeTest {
                                 .isInstanceOf(InsufficientBalanceException.class);
 
                 // 🔍 잔액 검증 후 중단되므로 주문 생성은 호출되지 않아야 함
+                verify(productService, times(2)).getProduct(1L); // 재고검증 + 금액계산 단계까지만
                 verify(balanceService).hasEnoughBalance(eq(1L), any(BigDecimal.class));
                 verify(productService, never()).reduceStock(anyLong(), anyInt());
-                verify(orderService, never()).createOrder(any(), any(), any(), any());
+                verify(orderService, never()).createOrderWithProductInfo(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -206,6 +222,7 @@ class OrderFacadeTest {
                                 .hasMessageContaining("쿠폰을 사용할 수 없습니다");
 
                 // 🔍 쿠폰 검증 후 중단되므로 결제는 호출되지 않아야 함
+                verify(productService, times(2)).getProduct(1L); // 재고검증 + 금액계산까지만
                 verify(couponService).validateAndCalculateDiscount(1L, 101L, new BigDecimal("2000000"));
                 verify(balanceService, never()).deductBalance(any(), any(), any());
         }
@@ -257,7 +274,12 @@ class OrderFacadeTest {
                 when(balanceService.hasEnoughBalance(eq(1L), any(BigDecimal.class))).thenReturn(true);
 
                 OrderResponse expectedResponse = createTestOrderResponse(1L, "ORD-123", new BigDecimal("2000000"));
-                when(orderService.createOrder(any(), any(), any(), any())).thenReturn(expectedResponse);
+                when(orderService.createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class))).thenReturn(expectedResponse);
 
                 // When
                 orderFacade.createOrder(request);
@@ -276,7 +298,12 @@ class OrderFacadeTest {
                 inOrder.verify(productService).reduceStock(1L, 2);
 
                 // 4. 주문 생성
-                inOrder.verify(orderService).createOrder(any(), any(), any(), any());
+                inOrder.verify(orderService).createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class));
         }
 
         @Test
@@ -300,7 +327,12 @@ class OrderFacadeTest {
                 when(balanceService.hasEnoughBalance(eq(1L), any(BigDecimal.class))).thenReturn(true);
 
                 OrderResponse expectedResponse = createTestOrderResponse(1L, "ORD-123", new BigDecimal("1900000"));
-                when(orderService.createOrder(any(), any(), any(), any())).thenReturn(expectedResponse);
+                when(orderService.createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class))).thenReturn(expectedResponse);
 
                 // When
                 OrderResponse response = orderFacade.createOrder(request);
@@ -315,7 +347,12 @@ class OrderFacadeTest {
                 verify(balanceService).deductBalance(eq(1L), any(BigDecimal.class), any(String.class)); // 3단계: 결제
                 verify(productService).reduceStock(1L, 2); // 4단계: 재고 차감
                 verify(couponService).useCoupon(eq(1L), eq(201L), any(BigDecimal.class)); // 5단계: 쿠폰 사용
-                verify(orderService).createOrder(any(), any(), any(), any()); // 6단계: 주문 생성
+                verify(orderService).createOrderWithProductInfo(
+                                any(CreateOrderRequest.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(BigDecimal.class),
+                                any(Map.class)); // 6단계: 주문 생성
         }
 
         // ==================== 테스트 데이터 생성 헬퍼 메서드들 ====================
