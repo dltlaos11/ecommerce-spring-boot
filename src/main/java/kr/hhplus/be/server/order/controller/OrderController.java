@@ -15,8 +15,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kr.hhplus.be.server.common.response.CommonResponse;
-import kr.hhplus.be.server.dto.order.CreateOrderRequest;
-import kr.hhplus.be.server.dto.order.OrderResponse;
+import kr.hhplus.be.server.order.dto.CreateOrderRequest;
+import kr.hhplus.be.server.order.dto.OrderResponse;
 import kr.hhplus.be.server.order.facade.OrderFacade;
 import lombok.extern.slf4j.Slf4j;
 

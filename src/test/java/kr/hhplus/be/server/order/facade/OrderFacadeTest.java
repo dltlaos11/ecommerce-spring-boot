@@ -1,4 +1,3 @@
-// OrderFacadeTest.java - 완전 수정된 버전
 package kr.hhplus.be.server.order.facade;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,9 +21,9 @@ import kr.hhplus.be.server.balance.exception.InsufficientBalanceException;
 import kr.hhplus.be.server.balance.service.BalanceService;
 import kr.hhplus.be.server.coupon.dto.CouponValidationResponse;
 import kr.hhplus.be.server.coupon.service.CouponService;
-import kr.hhplus.be.server.dto.order.CreateOrderRequest;
-import kr.hhplus.be.server.dto.order.OrderItemRequest;
-import kr.hhplus.be.server.dto.order.OrderResponse;
+import kr.hhplus.be.server.order.dto.CreateOrderRequest;
+import kr.hhplus.be.server.order.dto.OrderItemRequest;
+import kr.hhplus.be.server.order.dto.OrderResponse;
 import kr.hhplus.be.server.order.service.OrderService;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.InsufficientStockException;

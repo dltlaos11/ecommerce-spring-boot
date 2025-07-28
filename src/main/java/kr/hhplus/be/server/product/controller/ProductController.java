@@ -10,10 +10,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kr.hhplus.be.server.common.response.CommonResponse;
+import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.service.ProductService;
 import lombok.extern.slf4j.Slf4j;
@@ -256,6 +258,61 @@ public class ProductController {
     log.info("✅ 재고 확인 완료 - 상품 ID: {}, 결과: {}", productId, available ? "충분" : "부족");
 
     return CommonResponse.success(response);
+  }
+
+  @GetMapping("/popular")
+  @Operation(summary = "인기 상품 조회", description = "판매량 기준 인기 상품 상위 N개를 조회합니다.")
+  @ApiResponses({
+      @ApiResponse(responseCode = "200", description = "조회 성공", content = @Content(mediaType = "application/json", examples = @ExampleObject(name = "인기 상품 목록", value = """
+          {
+            "success": true,
+            "data": [
+              {
+                "rank": 1,
+                "productId": 1,
+                "productName": "고성능 노트북",
+                "price": 1500000.00,
+                "totalSalesQuantity": 150,
+                "totalSalesAmount": 225000000.00
+              }
+            ],
+            "timestamp": "2025-07-29T10:30:00"
+          }
+          """))),
+      @ApiResponse(responseCode = "400", description = "잘못된 요청 파라미터", content = @Content(mediaType = "application/json", schema = @Schema(implementation = CommonResponse.class),
+
+          examples = @ExampleObject(name = "잘못된 파라미터", value = """
+              {
+                "success": false,
+                "error": {
+                  "code": "INVALID_PARAMETER",
+                  "message": "잘못된 요청 파라미터입니다."
+                },
+                "timestamp": "2025-07-29T10:30:00"
+              }
+              """))),
+  })
+  public CommonResponse<List<PopularProductResponse>> getPopularProducts(
+      @Parameter(description = "조회할 상품 개수", example = "5") @RequestParam(defaultValue = "5") int limit,
+
+      @Parameter(description = "조회 기간 (일)", example = "7") @RequestParam(defaultValue = "30") int days) {
+
+    // 파라미터 검증 (실제 400 에러 발생용)
+    if (limit <= 0 || limit > 100) {
+      throw new IllegalArgumentException("조회 개수는 1-100 사이여야 합니다.");
+    }
+
+    if (days <= 0 || days > 365) {
+      throw new IllegalArgumentException("조회 기간은 1-365일 사이여야 합니다.");
+    }
+
+    log.info("📊 인기 상품 조회 요청 - limit: {}, 기간: {}일", limit, days);
+
+    List<PopularProductResponse> popularProducts = productService.getPopularProducts(limit, days);
+
+    log.info("✅ 인기 상품 조회 완료 - {}개 상품", popularProducts.size());
+
+    return CommonResponse.success(popularProducts);
   }
 
   /**

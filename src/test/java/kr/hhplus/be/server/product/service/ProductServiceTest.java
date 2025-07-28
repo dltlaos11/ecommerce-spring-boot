@@ -18,7 +18,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import kr.hhplus.be.server.order.domain.OrderItem;
+import kr.hhplus.be.server.order.repository.OrderItemRepository;
 import kr.hhplus.be.server.product.domain.Product;
+import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.InsufficientStockException;
 import kr.hhplus.be.server.product.exception.ProductNotFoundException;
@@ -45,6 +48,9 @@ class ProductServiceTest {
 
     @Mock
     private ProductRepository productRepository; // 가짜 Repository
+
+    @Mock
+    private OrderItemRepository orderItemRepository;
 
     @InjectMocks
     private ProductService productService; // 진짜 Service (Mock이 주입됨)
@@ -388,6 +394,61 @@ class ProductServiceTest {
         verify(productRepository).findById(nonExistentProductId);
     }
 
+    @Test
+    @DisplayName("인기 상품 조회 성공 - 판매량 기준으로 정렬된다")
+    void 인기상품조회_성공() {
+        // Given
+        List<OrderItem> mockOrderItems = createMockOrderItemsForStats();
+        when(orderItemRepository.findAll()).thenReturn(mockOrderItems);
+
+        // When
+        List<PopularProductResponse> results = productService.getPopularProducts(3, 30);
+
+        // Then
+        assertThat(results).hasSize(3);
+
+        // 순위 확인
+        assertThat(results.get(0).rank()).isEqualTo(1);
+        assertThat(results.get(1).rank()).isEqualTo(2);
+        assertThat(results.get(2).rank()).isEqualTo(3);
+
+        // 판매량 내림차순 확인
+        assertThat(results.get(0).totalSalesQuantity())
+                .isGreaterThanOrEqualTo(results.get(1).totalSalesQuantity());
+        assertThat(results.get(1).totalSalesQuantity())
+                .isGreaterThanOrEqualTo(results.get(2).totalSalesQuantity());
+
+        verify(orderItemRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("인기 상품 조회 - 주문 데이터가 없을 때 빈 리스트를 반환한다")
+    void 인기상품조회_주문데이터없음() {
+        // Given
+        when(orderItemRepository.findAll()).thenReturn(List.of());
+
+        // When
+        List<PopularProductResponse> results = productService.getPopularProducts(5, 30);
+
+        // Then
+        assertThat(results).isEmpty();
+        verify(orderItemRepository).findAll();
+    }
+
+    @Test
+    @DisplayName("인기 상품 조회 - 지정된 개수만큼만 반환한다")
+    void 인기상품조회_개수제한() {
+        // Given
+        List<OrderItem> mockOrderItems = createMockOrderItemsForStats(); // 5개 상품
+        when(orderItemRepository.findAll()).thenReturn(mockOrderItems);
+
+        // When: 3개만 요청
+        List<PopularProductResponse> results = productService.getPopularProducts(3, 30);
+
+        // Then: 3개만 반환
+        assertThat(results).hasSize(3);
+    }
+
     /**
      * 테스트용 Product 객체 생성 헬퍼 메서드
      * 
@@ -402,5 +463,37 @@ class ProductServiceTest {
         product.setCreatedAt(LocalDateTime.now());
         product.setUpdatedAt(LocalDateTime.now());
         return product;
+    }
+
+    // 테스트용 OrderItem 생성 헬퍼 메서드
+    private List<OrderItem> createMockOrderItemsForStats() {
+        LocalDateTime now = LocalDateTime.now();
+
+        return List.of(
+                // 상품 1: 총 판매량 10개
+                createMockOrderItem(1L, "노트북", new BigDecimal("1000000"), 5, now.minusDays(1)),
+                createMockOrderItem(1L, "노트북", new BigDecimal("1000000"), 5, now.minusDays(2)),
+
+                // 상품 2: 총 판매량 15개 (1위)
+                createMockOrderItem(2L, "마우스", new BigDecimal("50000"), 10, now.minusDays(1)),
+                createMockOrderItem(2L, "마우스", new BigDecimal("50000"), 5, now.minusDays(3)),
+
+                // 상품 3: 총 판매량 8개
+                createMockOrderItem(3L, "키보드", new BigDecimal("150000"), 8, now.minusDays(1)),
+
+                // 상품 4: 총 판매량 12개 (2위)
+                createMockOrderItem(4L, "모니터", new BigDecimal("300000"), 12, now.minusDays(2)),
+
+                // 상품 5: 총 판매량 6개
+                createMockOrderItem(5L, "스피커", new BigDecimal("200000"), 6, now.minusDays(1)));
+    }
+
+    private OrderItem createMockOrderItem(Long productId, String productName,
+            BigDecimal price, Integer quantity,
+            LocalDateTime createdAt) {
+        OrderItem item = new OrderItem(productId, productName, price, quantity);
+        item.setId(System.nanoTime()); // 유니크한 ID
+        item.setCreatedAt(createdAt);
+        return item;
     }
 }

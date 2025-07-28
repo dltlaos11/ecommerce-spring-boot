@@ -1,13 +1,20 @@
 package kr.hhplus.be.server.product.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.common.exception.ErrorCode;
+import kr.hhplus.be.server.order.domain.OrderItem;
+import kr.hhplus.be.server.order.repository.OrderItemRepository;
 import kr.hhplus.be.server.product.domain.Product;
+import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.ProductNotFoundException;
 import kr.hhplus.be.server.product.repository.ProductRepository;
@@ -33,6 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final OrderItemRepository orderItemRepository;
 
     /**
      * 생성자 주입 (스프링 권장 방식)
@@ -42,8 +50,10 @@ public class ProductService {
      * - 테스트 시 Mock 객체 주입 용이
      * - 순환 의존성 컴파일 타임 감지
      */
-    public ProductService(ProductRepository productRepository) {
+    public ProductService(ProductRepository productRepository,
+            OrderItemRepository orderItemRepository) {
         this.productRepository = productRepository;
+        this.orderItemRepository = orderItemRepository; // 추가
     }
 
     /**
@@ -140,6 +150,78 @@ public class ProductService {
         return products.stream()
                 .map(this::convertToResponse)
                 .toList();
+    }
+
+    /**
+     * 인기 상품 조회 (판매량 기준)
+     * 
+     * @param limit 조회할 상품 개수
+     * @param days  조회 기간 (최근 N일)
+     * @return 인기 상품 목록 (판매량 내림차순)
+     */
+    public List<PopularProductResponse> getPopularProducts(int limit, int days) {
+        log.debug("📊 인기 상품 통계 생성: limit = {}, 기간 = {}일", limit, days);
+
+        // OrderItemRepository 의존성 주입 필요 (생성자에 추가)
+        LocalDateTime startDate = LocalDateTime.now().minusDays(days);
+
+        // 1. 기간 내 모든 주문 항목 조회
+        List<OrderItem> recentOrderItems = orderItemRepository.findAll().stream()
+                .filter(item -> item.getCreatedAt().isAfter(startDate))
+                .collect(Collectors.toList());
+
+        log.debug("📈 기간 내 주문 항목 수: {}", recentOrderItems.size());
+
+        // 2. 상품별 판매 통계 집계
+        Map<Long, ProductSalesStats> salesStatsMap = recentOrderItems.stream()
+                .collect(Collectors.groupingBy(
+                        OrderItem::getProductId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                this::calculateProductSalesStats)));
+
+        // 3. 판매량 기준 내림차순 정렬 및 순위 부여
+        AtomicInteger rank = new AtomicInteger(1);
+        List<PopularProductResponse> popularProducts = salesStatsMap.values().stream()
+                .sorted((a, b) -> Integer.compare(b.totalQuantity, a.totalQuantity))
+                .limit(limit)
+                .map(stats -> new PopularProductResponse(
+                        rank.getAndIncrement(),
+                        stats.productId,
+                        stats.productName,
+                        stats.productPrice,
+                        stats.totalQuantity,
+                        stats.totalAmount))
+                .collect(Collectors.toList());
+
+        log.info("✅ 인기 상품 통계 생성 완료: {}개", popularProducts.size());
+        return popularProducts;
+    }
+
+    /**
+     * 상품별 판매 통계 계산 (private 헬퍼 메서드)
+     */
+    private ProductSalesStats calculateProductSalesStats(List<OrderItem> items) {
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("주문 항목이 비어있습니다.");
+        }
+
+        // 첫 번째 항목에서 상품 기본 정보 추출
+        OrderItem firstItem = items.get(0);
+        Long productId = firstItem.getProductId();
+        String productName = firstItem.getProductName();
+        BigDecimal productPrice = firstItem.getProductPrice();
+
+        // 총 판매 수량 및 금액 계산
+        int totalQuantity = items.stream()
+                .mapToInt(OrderItem::getQuantity)
+                .sum();
+
+        BigDecimal totalAmount = items.stream()
+                .map(OrderItem::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return new ProductSalesStats(productId, productName, productPrice, totalQuantity, totalAmount);
     }
 
     /**
@@ -304,5 +386,25 @@ public class ProductService {
                 product.getPrice(),
                 product.getStockQuantity(),
                 product.getCreatedAt());
+    }
+
+    /**
+     * 상품별 판매 통계 내부 클래스
+     */
+    private static class ProductSalesStats {
+        final Long productId;
+        final String productName;
+        final BigDecimal productPrice;
+        final Integer totalQuantity;
+        final BigDecimal totalAmount;
+
+        ProductSalesStats(Long productId, String productName, BigDecimal productPrice,
+                Integer totalQuantity, BigDecimal totalAmount) {
+            this.productId = productId;
+            this.productName = productName;
+            this.productPrice = productPrice;
+            this.totalQuantity = totalQuantity;
+            this.totalAmount = totalAmount;
+        }
     }
 }
