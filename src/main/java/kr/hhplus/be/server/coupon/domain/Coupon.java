@@ -3,41 +3,65 @@ package kr.hhplus.be.server.coupon.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import jakarta.persistence.*;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.coupon.exception.CouponExhaustedException;
 import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 쿠폰 도메인 모델
- * 
- * 설계 원칙:
- * - 쿠폰 발급 및 사용 비즈니스 로직 캡슐화
- * - 할인 계산 로직 내장
- * - 쿠폰 상태 관리 (유효성 검증)
- * 
- * 책임:
- * - 쿠폰 발급 가능 여부 확인
- * - 할인 금액 계산
- * - 쿠폰 유효성 검증 (만료일, 최소 주문금액)
+ * Entity + Domain 통합
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Entity
+@Table(name = "coupons", indexes = {
+        @Index(name = "idx_coupons_availability", columnList = "expired_at, issued_quantity, total_quantity")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Coupon {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "name", nullable = false)
     private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", nullable = false)
     private DiscountType discountType;
+
+    @Column(name = "discount_value", precision = 10, scale = 2, nullable = false)
     private BigDecimal discountValue;
+
+    @Column(name = "total_quantity", nullable = false)
     private Integer totalQuantity;
-    private Integer issuedQuantity;
+
+    @Column(name = "issued_quantity", nullable = false)
+    private Integer issuedQuantity = 0;
+
+    @Column(name = "max_discount_amount", precision = 10, scale = 2)
     private BigDecimal maxDiscountAmount;
-    private BigDecimal minimumOrderAmount;
+
+    @Column(name = "minimum_order_amount", precision = 10, scale = 2)
+    private BigDecimal minimumOrderAmount = BigDecimal.ZERO;
+
+    @Column(name = "expired_at")
     private LocalDateTime expiredAt;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     /**
@@ -64,6 +88,8 @@ public class Coupon {
         }
     }
 
+    // 생성자
+
     /**
      * 새 쿠폰 생성용 생성자
      */
@@ -78,19 +104,12 @@ public class Coupon {
         this.maxDiscountAmount = maxDiscountAmount;
         this.minimumOrderAmount = minimumOrderAmount != null ? minimumOrderAmount : BigDecimal.ZERO;
         this.expiredAt = expiredAt;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
+
+    // 비즈니스 로직 (기존 Domain 로직 그대로)
 
     /**
      * 쿠폰 발급 가능 여부 확인
-     * 
-     * 🎯 비즈니스 규칙:
-     * - 쿠폰이 만료되지 않았는지 확인
-     * - 발급 수량이 남아있는지 확인
-     * 
-     * @throws CouponExpiredException   쿠폰이 만료된 경우
-     * @throws CouponExhaustedException 쿠폰이 모두 소진된 경우
      */
     public void validateIssuable() {
         if (isExpired()) {
@@ -104,10 +123,6 @@ public class Coupon {
 
     /**
      * 쿠폰 사용 가능 여부 확인
-     * 
-     * @param orderAmount 주문 금액
-     * @throws CouponExpiredException   쿠폰이 만료된 경우
-     * @throws IllegalArgumentException 최소 주문 금액 미달인 경우
      */
     public void validateUsable(BigDecimal orderAmount) {
         if (isExpired()) {
@@ -122,9 +137,6 @@ public class Coupon {
 
     /**
      * 할인 금액 계산
-     * 
-     * @param orderAmount 주문 금액
-     * @return 실제 할인 금액
      */
     public BigDecimal calculateDiscountAmount(BigDecimal orderAmount) {
         validateUsable(orderAmount);
@@ -158,7 +170,6 @@ public class Coupon {
     public void issue() {
         validateIssuable();
         this.issuedQuantity++;
-        this.updatedAt = LocalDateTime.now();
     }
 
     /**
@@ -189,30 +200,24 @@ public class Coupon {
         return !isExpired() && !isExhausted();
     }
 
-    /**
-     * ID 설정 (Repository에서 호출)
-     */
-    public void setId(Long id) {
+    // JPA를 위한 setter
+
+    void setId(Long id) {
         this.id = id;
     }
 
-    /**
-     * updatedAt 갱신 (Repository 저장 시)
-     */
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    /**
-     * 발급 수량 설정 (Repository에서 호출)
-     */
-    public void setIssuedQuantity(Integer issuedQuantity) {
+    void setIssuedQuantity(Integer issuedQuantity) {
         this.issuedQuantity = issuedQuantity;
     }
 
-    /**
-     * 디버깅 및 로깅용 toString
-     */
+    void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     @Override
     public String toString() {
         return String.format("Coupon{id=%d, name='%s', type=%s, issued=%d/%d}",

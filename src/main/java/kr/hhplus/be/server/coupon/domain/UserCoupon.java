@@ -2,37 +2,55 @@ package kr.hhplus.be.server.coupon.domain;
 
 import java.time.LocalDateTime;
 
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import jakarta.persistence.*;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyUsedException;
 import kr.hhplus.be.server.coupon.exception.CouponExpiredException;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 사용자 쿠폰 도메인 모델
- * 
- * 설계 원칙:
- * - 사용자별 쿠폰 발급 및 사용 이력 관리
- * - 쿠폰 상태 변경 로직 캡슐화
- * - 사용 조건 검증 로직 내장
- * 
- * 책임:
- * - 쿠폰 사용 처리
- * - 쿠폰 상태 관리 (AVAILABLE, USED, EXPIRED)
- * - 사용 가능 여부 검증
+ * Entity + Domain 통합
+ * Repository 2번 호출 방식 사용
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Entity
+@Table(name = "user_coupons", indexes = {
+        @Index(name = "idx_user_coupon_unique", columnList = "user_id, coupon_id", unique = true),
+        @Index(name = "idx_user_coupons_user_status", columnList = "user_id, status")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserCoupon {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long userId;
-    private Long couponId;
-    private CouponStatus status;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId; // 🚫 연관관계 없이 단순 FK
+
+    @Column(name = "coupon_id", nullable = false)
+    private Long couponId; // 🚫 연관관계 없이 단순 FK
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private CouponStatus status = CouponStatus.AVAILABLE;
+
+    @Column(name = "used_at")
     private LocalDateTime usedAt;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     /**
@@ -60,6 +78,8 @@ public class UserCoupon {
         }
     }
 
+    // 생성자
+
     /**
      * 새 사용자 쿠폰 생성용 생성자
      */
@@ -67,20 +87,12 @@ public class UserCoupon {
         this.userId = userId;
         this.couponId = couponId;
         this.status = CouponStatus.AVAILABLE;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
+
+    // 비즈니스 로직 (기존 Domain 로직 그대로)
 
     /**
      * 쿠폰 사용 처리
-     * 
-     * 🎯 비즈니스 규칙:
-     * - 사용 가능한 상태여야 함
-     * - 이미 사용된 쿠폰은 재사용 불가
-     * - 만료된 쿠폰은 사용 불가
-     * 
-     * @throws CouponAlreadyUsedException 이미 사용된 쿠폰인 경우
-     * @throws CouponExpiredException     만료된 쿠폰인 경우
      */
     public void use() {
         if (status == CouponStatus.USED) {
@@ -93,7 +105,6 @@ public class UserCoupon {
 
         this.status = CouponStatus.USED;
         this.usedAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
 
     /**
@@ -102,7 +113,6 @@ public class UserCoupon {
     public void expire() {
         if (status == CouponStatus.AVAILABLE) {
             this.status = CouponStatus.EXPIRED;
-            this.updatedAt = LocalDateTime.now();
         }
     }
 
@@ -127,37 +137,28 @@ public class UserCoupon {
         return status == CouponStatus.EXPIRED;
     }
 
-    /**
-     * ID 설정 (Repository에서 호출)
-     */
-    public void setId(Long id) {
+    // JPA를 위한 setter
+
+    void setId(Long id) {
         this.id = id;
     }
 
-    /**
-     * updatedAt 갱신 (Repository 저장 시)
-     */
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    /**
-     * 상태 설정 (Repository에서 호출)
-     */
-    public void setStatus(CouponStatus status) {
+    void setStatus(CouponStatus status) {
         this.status = status;
     }
 
-    /**
-     * 사용 시간 설정 (Repository에서 호출)
-     */
-    public void setUsedAt(LocalDateTime usedAt) {
+    void setUsedAt(LocalDateTime usedAt) {
         this.usedAt = usedAt;
     }
 
-    /**
-     * 디버깅 및 로깅용 toString
-     */
+    void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     @Override
     public String toString() {
         return String.format("UserCoupon{id=%d, userId=%d, couponId=%d, status=%s}",
