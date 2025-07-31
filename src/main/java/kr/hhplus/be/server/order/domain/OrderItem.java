@@ -3,50 +3,73 @@ package kr.hhplus.be.server.order.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 주문 항목 도메인 모델
- * 
- * 설계 원칙:
- * - 주문 시점의 상품 정보 보존 (비정규화)
- * - 소계 금액 계산 로직 내장
- * - 주문과의 연관관계 관리
- * 
- * 책임:
- * - 주문 항목별 소계 계산
- * - 주문 시점 상품 정보 보존
- * - 수량 및 가격 검증
+ * Entity + Domain
+ * 연관관계 매핑 제거
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Entity
+@Table(name = "order_items", indexes = {
+        @Index(name = "idx_order_items_order_id", columnList = "order_id"),
+        @Index(name = "idx_order_items_product", columnList = "product_id"),
+        @Index(name = "idx_order_items_created_product", columnList = "created_at, product_id")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderItem {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Order order; // 연관관계
+
+    @Column(name = "order_id", nullable = false)
+    private Long orderId; // 연관관계 없이 단순 FK
+
+    @Column(name = "product_id", nullable = false)
     private Long productId;
-    private String productName; // 주문 시점 상품명 보존
-    private BigDecimal productPrice; // 주문 시점 상품가격 보존
+
+    @Column(name = "product_name", nullable = false)
+    private String productName; // 주문 시점 상품명 보존 (비정규화)
+
+    @Column(name = "product_price", precision = 10, scale = 2, nullable = false)
+    private BigDecimal productPrice; // 주문 시점 상품가격 보존 (비정규화)
+
+    @Column(name = "quantity", nullable = false)
     private Integer quantity;
+
+    @Column(name = "subtotal", precision = 15, scale = 2, nullable = false)
     private BigDecimal subtotal;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    // 생성자
 
     /**
      * 새 주문 항목 생성용 생성자
      */
-    public OrderItem(Long productId, String productName, BigDecimal productPrice, Integer quantity) {
+    public OrderItem(Long orderId, Long productId, String productName,
+            BigDecimal productPrice, Integer quantity) {
         validateInputs(productId, productName, productPrice, quantity);
 
+        this.orderId = orderId;
         this.productId = productId;
         this.productName = productName;
         this.productPrice = productPrice;
         this.quantity = quantity;
         this.subtotal = calculateSubtotal(productPrice, quantity);
-        this.createdAt = LocalDateTime.now();
     }
+
+    // 비즈니스 로직 (기존 Domain 로직 그대로)
 
     /**
      * 소계 계산
@@ -76,19 +99,17 @@ public class OrderItem {
         recalculateSubtotal();
     }
 
-    /**
-     * ID 설정 (Repository에서 호출)
-     */
-    public void setId(Long id) {
+    // JPA를 위한 setter
+
+    void setId(Long id) {
         this.id = id;
     }
 
-    /**
-     * Order 설정 (연관관계 편의 메서드)
-     */
-    public void setOrder(Order order) {
-        this.order = order;
+    void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
+
+    // 비즈니스 로직 헬퍼
 
     /**
      * 입력값 검증
@@ -108,12 +129,9 @@ public class OrderItem {
         }
     }
 
-    /**
-     * 디버깅 및 로깅용 toString
-     */
     @Override
     public String toString() {
-        return String.format("OrderItem{productId=%d, productName='%s', quantity=%d, subtotal=%s}",
-                productId, productName, quantity, subtotal);
+        return String.format("OrderItem{id=%d, orderId=%d, productId=%d, productName='%s', quantity=%d, subtotal=%s}",
+                id, orderId, productId, productName, quantity, subtotal);
     }
 }
