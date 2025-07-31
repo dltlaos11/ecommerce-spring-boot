@@ -1,6 +1,6 @@
 ## :pushpin: PR 제목 규칙
 
-[STEP0X] 이름 - 선택 시나리오 (e-commerce/concert)
+[STEP07,STEP08] 주용준 - 선택 시나리오 (e-commerce)
 
 ---
 
