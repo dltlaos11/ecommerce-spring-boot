@@ -1,5 +1,15 @@
 spring:
   # TestContainer에서 자동 설정됨
+  datasource:
+    # HikariCP 연결 풀 최적화 - 핵심 문제 해결!
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      leak-detection-threshold: 0 # 비활성화
+
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -8,6 +18,7 @@ spring:
         dialect: org.hibernate.dialect.MySQL8Dialect
         show_sql: false
         format_sql: false
+        default_batch_fetch_size: 100
     show-sql: false
     defer-datasource-initialization: true
 
@@ -37,4 +48,4 @@ springdoc:
 # TestContainer 설정
 testcontainers:
   reuse:
-    enable: false
+    enable: true
