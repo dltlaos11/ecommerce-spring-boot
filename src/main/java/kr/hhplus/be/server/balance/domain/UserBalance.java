@@ -155,6 +155,49 @@ public class UserBalance {
         this.updatedAt = updatedAt;
     }
 
+    // ======================== 테스트를 위한 public setter (테스트 전용)
+    // ========================
+
+    /**
+     * 테스트 전용 - ID 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    /**
+     * 테스트 전용 - 잔액 직접 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setBalanceForTest(BigDecimal balance) {
+        this.balance = balance;
+    }
+
+    /**
+     * 테스트 전용 - 생성시간 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    /**
+     * 테스트 전용 - 수정시간 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setUpdatedAtForTest(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     // ======================== 비즈니스 로직 헬퍼 ========================
 
     private void validateChargeAmount(BigDecimal amount) {
