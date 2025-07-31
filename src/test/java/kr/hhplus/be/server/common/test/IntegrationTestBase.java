@@ -5,23 +5,25 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 통합 테스트 기본 클래스 - 개선된 버전
+ * 통합 테스트 기본 클래스 - 수정된 버전
  * 
- * 특징:
- * - @Sql 어노테이션으로 테스트 데이터 자동 정리
- * - 더 안전한 테스트 환경 제공
- * - 테스트 간 데이터 간섭 최소화
+ * 수정사항:
+ * - 컨테이너 공유를 위한 static 설정
+ * - DynamicPropertySource 추가
+ * - 더 안정적인 컨테이너 설정
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @ActiveProfiles("test")
-@Sql(scripts = "/test-cleanup.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@Transactional
 public abstract class IntegrationTestBase {
 
     @Container
@@ -30,7 +32,17 @@ public abstract class IntegrationTestBase {
             .withDatabaseName("testdb")
             .withUsername("test")
             .withPassword("test")
-            .withReuse(true); // 컨테이너 재사용으로 성능 최적화
+            .withCommand("--default-authentication-plugin=mysql_native_password")
+            .withEnv("MYSQL_ROOT_PASSWORD", "test")
+            .withReuse(false); // 테스트별 독립성 보장
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", mysql::getJdbcUrl);
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+    }
 
     @Autowired
     protected TestRestTemplate restTemplate;
@@ -46,10 +58,9 @@ public abstract class IntegrationTestBase {
 
     /**
      * 테스트용 고유한 사용자 ID 생성
-     * 테스트 간 데이터 충돌 방지
      */
     protected Long generateUniqueUserId() {
-        return System.currentTimeMillis() % 100000 + 1000; // 1000~101000 범위
+        return System.currentTimeMillis() % 100000 + 1000;
     }
 
     /**
@@ -57,5 +68,15 @@ public abstract class IntegrationTestBase {
      */
     protected String generateUniqueProductName(String baseName) {
         return baseName + "_" + System.currentTimeMillis();
+    }
+
+    /**
+     * 컨테이너 상태 확인 메서드
+     */
+    protected void logContainerStatus() {
+        System.out.println("MySQL Container Status: " + mysql.isRunning());
+        System.out.println("MySQL Container URL: " + mysql.getJdbcUrl());
+        System.out.println("MySQL Container Logs: ");
+        System.out.println(mysql.getLogs());
     }
 }

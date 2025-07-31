@@ -359,8 +359,12 @@ class BalanceServiceTest {
 
                 // Then
                 assertThat(histories).hasSize(2);
-                assertThat(histories.get(0).transactionType()).isEqualTo("CHARGE");
-                assertThat(histories.get(1).transactionType()).isEqualTo("PAYMENT");
+
+                // 수정된 부분: enum의 getCode() 메서드 호출
+                assertThat(histories.get(0).transactionType()).isEqualTo(
+                                BalanceHistory.TransactionType.CHARGE.getCode());
+                assertThat(histories.get(1).transactionType()).isEqualTo(
+                                BalanceHistory.TransactionType.PAYMENT.getCode());
 
                 verify(balanceHistoryRepository).findRecentHistoriesByUserId(userId, limit);
         }
@@ -425,12 +429,21 @@ class BalanceServiceTest {
         private BalanceHistory createTestBalanceHistory(Long userId,
                         BalanceHistory.TransactionType type,
                         String amount) {
-                // 생성자를 사용하여 생성
-                BalanceHistory history = BalanceHistory.createChargeHistory(
-                                userId,
-                                new BigDecimal(amount),
-                                new BigDecimal("50000.00"),
-                                "TEST_TX_" + System.currentTimeMillis());
+                // type에 따라 적절한 팩토리 메서드 사용
+                BalanceHistory history;
+                if (type == BalanceHistory.TransactionType.CHARGE) {
+                        history = BalanceHistory.createChargeHistory(
+                                        userId,
+                                        new BigDecimal(amount),
+                                        new BigDecimal("50000.00"),
+                                        "TEST_TX_" + System.currentTimeMillis());
+                } else {
+                        history = BalanceHistory.createPaymentHistory(
+                                        userId,
+                                        new BigDecimal(amount),
+                                        new BigDecimal("35000.00"),
+                                        "TEST_ORDER_" + System.currentTimeMillis());
+                }
 
                 // Reflection으로 ID와 생성시간 설정
                 try {
