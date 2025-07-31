@@ -6,7 +6,8 @@ import java.util.Optional;
 import kr.hhplus.be.server.order.domain.Order;
 
 /**
- * 주문 저장소 인터페이스
+ * 주문 저장소 인터페이스 (Domain Layer)
+ * DIP 적용 - Infrastructure가 이 인터페이스를 구현
  * 
  * 설계 원칙:
  * - DIP(의존성 역전 원칙) 적용
