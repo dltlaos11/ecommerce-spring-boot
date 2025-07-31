@@ -8,12 +8,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
-import kr.hhplus.be.server.balance.domain.UserBalance; //  통합된 Entity+Domain
+import kr.hhplus.be.server.balance.domain.UserBalance;
 
 /**
  * Entity-Domain 통합 버전 JPA Repository
  */
-interface UserBalanceJpaRepository extends JpaRepository<UserBalance, Long> {
+public interface UserBalanceJpaRepository extends JpaRepository<UserBalance, Long> {
 
     /**
      * 사용자 ID로 잔액 조회
