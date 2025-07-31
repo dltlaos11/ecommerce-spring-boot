@@ -3,10 +3,11 @@
 ## 📋 목차
 
 1. [성능 저하 가능성 기능 식별](#1-성능-저하-가능성-기능-식별)
-2. [쿼리 실행계획 분석](#2-쿼리-실행계획-분석)
+2. [쿼리 실행계획 이론적 분석](#2-쿼리-실행계획-이론적-분석)
 3. [인덱스 설계 및 최적화 방안](#3-인덱스-설계-및-최적화-방안)
-4. [성능 개선 전후 비교](#4-성능-개선-전후-비교)
-5. [결론 및 권장사항](#5-결론-및-권장사항)
+4. [성능 개선 예상 효과](#4-성능-개선-예상-효과)
+5. [구현된 최적화 방안](#5-구현된-최적화-방안)
+6. [향후 테스트 계획](#6-향후-테스트-계획)
 
 ---
 
@@ -16,58 +17,49 @@
 
 #### 🔴 **HIGH: 인기 상품 통계 조회**
 
-- **기능**: `GET /api/v1/products/popular`
+- **기능**: `ProductService.getPopularProducts()`
 - **문제점**:
-  - 전체 `order_items` 테이블 풀스캔
-  - 날짜 필터링 후 메모리에서 GROUP BY 수행
-  - 대용량 데이터 시 응답시간 급격히 증가
+  - `OrderItemRepository.findAll()`로 전체 테이블 스캔
+  - 애플리케이션 메모리에서 날짜 필터링 수행
+  - Java Stream으로 GROUP BY 처리
+  - 대용량 데이터 시 메모리 부족 위험
 - **예상 데이터량**: 주문 100만건 시 order_items 500만건
-- **현재 쿼리**:
+- **현재 코드**:
 
-```sql
-SELECT * FROM order_items
-WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY);
--- 애플리케이션에서 groupBy 처리
+```java
+// ProductService.java - 문제가 있는 현재 구현
+List<OrderItem> recentOrderItems = orderItemRepository.findAll().stream()
+    .filter(item -> item.getCreatedAt().isAfter(startDate))  // 메모리에서 필터링
+    .collect(Collectors.toList());
 ```
 
 #### 🟡 **MEDIUM: 사용자별 주문 목록 조회**
 
-- **기능**: `GET /api/v1/orders/users/{userId}`
+- **기능**: `OrderService.getUserOrders()`
 - **문제점**:
-  - `user_id` 컬럼에 인덱스 부족
-  - 주문 목록 조회 후 N+1 문제로 주문항목 개별 조회
-- **현재 쿼리**:
+  - `user_id` 컬럼에 인덱스 부족으로 풀스캔 가능성
+  - Repository 2번 호출로 N+1 문제 발생
+- **현재 코드**:
 
-```sql
--- 1. 주문 목록 조회
-SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC;
-
--- 2. 각 주문별 항목 조회 (N+1 문제)
-SELECT * FROM order_items WHERE order_id = ?; -- N번 실행
+```java
+// OrderService.java - N+1 문제 발생 코드
+List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+return orders.stream()
+    .map(order -> {
+        List<OrderItem> orderItems = orderItemRepository.findByOrderId(order.getId()); // N번 실행
+        return convertToOrderResponse(order, orderItems);
+    })
+    .toList();
 ```
 
-#### 🟡 **MEDIUM: 잔액 이력 조회 (페이징 없음)**
+#### 🟡 **MEDIUM: 잔액 이력 조회**
 
-- **기능**: `GET /api/v1/users/{userId}/balance/history`
+- **기능**: `BalanceService.getBalanceHistories()`
 - **문제점**:
-  - 사용자별 모든 이력 조회 시 성능 저하
-  - `user_id`와 `created_at` 복합 인덱스 필요
-- **현재 쿼리**:
+  - `user_id`와 `created_at` 복합 인덱스 부족
+  - LIMIT 없이 대량 데이터 조회 가능성
 
-```sql
-SELECT * FROM balance_histories
-WHERE user_id = ?
-ORDER BY created_at DESC
-LIMIT 10;
-```
-
-#### 🟢 **LOW: 선착순 쿠폰 발급**
-
-- **기능**: `POST /api/v1/coupons/{couponId}/issue`
-- **현재 상태**: 비관적 락으로 동시성 제어 완료
-- **성능**: 단건 처리로 성능 이슈 낮음
-
-### 1.2 성능 측정 기준
+### 1.2 성능 측정 기준 설정
 
 - **목표 응답시간**: 95% 요청이 500ms 이내
 - **동시 사용자**: 1,000명
@@ -75,310 +67,121 @@ LIMIT 10;
 
 ---
 
-## 2. 쿼리 실행계획 분석
+## 2. 쿼리 실행계획 이론적 분석
 
 ### 2.1 인기 상품 통계 쿼리 분석
 
-#### **개선 전 실행계획**
+#### **문제가 예상되는 쿼리**
 
 ```sql
-EXPLAIN SELECT
-    oi.product_id,
-    oi.product_name,
-    oi.product_price,
-    SUM(oi.quantity) as total_quantity,
-    SUM(oi.subtotal) as total_amount
-FROM order_items oi
-WHERE oi.created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
-GROUP BY oi.product_id, oi.product_name, oi.product_price
-ORDER BY total_quantity DESC
-LIMIT 5;
+-- 현재 JPA가 생성하는 쿼리 (예상)
+SELECT * FROM order_items;  -- 전체 조회 후 애플리케이션에서 처리
 ```
 
-**실행계획 결과:**
+**예상 실행계획:**
 | id | select_type | table | type | key | rows | Extra |
 |----|-------------|-------|------|-----|------|--------|
-| 1 | SIMPLE | oi | **ALL** | NULL | **500,000** | Using where; Using temporary; Using filesort |
+| 1 | SIMPLE | order_items | **ALL** | NULL | **500,000+** | Using filesort |
 
-**⚠️ 문제점:**
+**⚠️ 예상 문제점:**
 
-- **type: ALL** → 풀테이블 스캔
-- **rows: 500,000** → 전체 데이터 검사
-- **Using temporary** → 임시 테이블 생성 (메모리/디스크)
-- **Using filesort** → 파일 정렬 수행
-
-#### **예상 성능 영향**
-
-- 응답시간: **3-5초** (대용량 데이터 시)
-- CPU 사용률: **80-90%**
-- 메모리 사용량: **500MB+** (GROUP BY 처리)
+- **type: ALL** → 풀테이블 스캔 불가피
+- **rows: 500,000+** → 모든 데이터 로딩
+- **메모리 부족** → 대용량 데이터 시 OutOfMemoryError 위험
 
 ### 2.2 사용자 주문 목록 쿼리 분석
 
-#### **개선 전 실행계획**
+#### **현재 생성되는 쿼리들**
 
 ```sql
-EXPLAIN SELECT * FROM orders
-WHERE user_id = 12345
-ORDER BY created_at DESC;
+-- 1. 주문 목록 조회
+SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC;
+
+-- 2. 각 주문별 항목 조회 (N번 실행)
+SELECT * FROM order_items WHERE order_id = ?;
 ```
 
-**실행계획 결과:**
-| id | select_type | table | type | key | rows | Extra |
-|----|-------------|-------|------|-----|------|--------|
-| 1 | SIMPLE | orders | **ALL** | NULL | **100,000** | Using where; Using filesort |
-
-**⚠️ 문제점:**
-
-- **type: ALL** → user_id 인덱스 없어서 풀스캔
-- **Using filesort** → created_at 정렬을 위한 파일 정렬
+**예상 실행계획 (user_id 인덱스 없는 경우):**
+| 쿼리 | type | key | rows | 문제점 |
+|------|------|-----|------|--------|
+| orders | ALL | NULL | 100,000 | 풀스캔 |
+| order_items | ref | PRIMARY | 5 | N+1 문제 |
 
 ---
 
 ## 3. 인덱스 설계 및 최적화 방안
 
-### 3.1 핵심 인덱스 설계
+### 3.1 핵심 인덱스 설계 전략
 
-#### **1) 인기 상품 통계 최적화**
+#### **1) 인기 상품 통계 최적화를 위한 인덱스**
 
 ```sql
--- 복합 인덱스: 날짜 + 상품ID 조회 최적화
+-- 기본 복합 인덱스: 날짜 범위 + 그룹핑
 CREATE INDEX idx_order_items_created_product
 ON order_items(created_at, product_id);
 
--- 커버링 인덱스: SELECT 절 모든 컬럼 포함
+-- 커버링 인덱스: 테이블 접근 제거
 CREATE INDEX idx_order_items_stats_covering
 ON order_items(created_at, product_id, quantity, subtotal, product_name, product_price);
 ```
 
-**인덱스 선택 전략:**
+**설계 근거:**
 
-- **선두 컬럼**: `created_at` (날짜 범위 검색)
-- **두 번째 컬럼**: `product_id` (GROUP BY 키)
-- **커버링**: 모든 SELECT 컬럼 포함으로 테이블 접근 제거
+- **선두 컬럼**: `created_at` (WHERE 절 날짜 범위 검색)
+- **두 번째**: `product_id` (GROUP BY 키)
+- **커버링 컬럼들**: SELECT 절 모든 컬럼 포함
 
-#### **2) 사용자 주문 목록 최적화**
+#### **2) 사용자 주문 조회 최적화**
 
 ```sql
--- 복합 인덱스: 사용자 + 생성일 정렬
+-- 사용자별 주문 목록 조회 최적화
 CREATE INDEX idx_orders_user_created
 ON orders(user_id, created_at DESC);
 ```
 
-**인덱스 효과:**
+**효과:**
 
-- `user_id` 필터링 + `created_at` 정렬을 하나의 인덱스로 처리
-- ORDER BY 절의 filesort 제거
+- `user_id` 필터링 최적화
+- `created_at DESC` 정렬 최적화
+- filesort 연산 제거
 
 #### **3) 잔액 이력 조회 최적화**
 
 ```sql
--- 복합 인덱스: 사용자 + 시간순 정렬
+-- 사용자별 잔액 이력 조회 최적화
 CREATE INDEX idx_balance_histories_user_created
 ON balance_histories(user_id, created_at DESC);
 ```
 
-### 3.2 쿼리 구조 개선
+### 3.2 쿼리 구조 개선 방안
 
-#### **개선된 인기 상품 통계 쿼리**
+#### **개선된 인기 상품 통계 로직**
 
-```sql
--- 인덱스 힌트 사용으로 최적 경로 강제
-SELECT /*+ USE_INDEX(oi, idx_order_items_stats_covering) */
-    oi.product_id,
-    oi.product_name,
-    oi.product_price,
-    SUM(oi.quantity) as total_quantity,
-    SUM(oi.subtotal) as total_amount
-FROM order_items oi
-WHERE oi.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-GROUP BY oi.product_id, oi.product_name, oi.product_price
-ORDER BY total_quantity DESC
-LIMIT 5;
-```
-
-#### **N+1 문제 해결: Batch 쿼리**
-
-```sql
--- 기존: N+1 쿼리
-SELECT * FROM orders WHERE user_id = ?;
-SELECT * FROM order_items WHERE order_id = ?; -- N번
-
--- 개선: Batch 쿼리 (application.yml에서 설정)
-SELECT * FROM orders WHERE user_id = ?;
-SELECT * FROM order_items WHERE order_id IN (?, ?, ?, ...); -- 1번
-```
-
-**application.yml 설정:**
-
-```yaml
-spring:
-  jpa:
-    properties:
-      hibernate:
-        default_batch_fetch_size: 100 # Batch 크기 설정
-```
-
-### 3.3 실시간 통계 테이블 도입 (고도화)
-
-```sql
--- 일별 상품 판매 통계 테이블
-CREATE TABLE daily_product_stats (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    product_id BIGINT NOT NULL,
-    stats_date DATE NOT NULL,
-    total_quantity INT DEFAULT 0,
-    total_amount DECIMAL(15,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    UNIQUE KEY uk_product_date (product_id, stats_date),
-    INDEX idx_stats_date (stats_date),
-    INDEX idx_product_stats (product_id, stats_date)
+```java
+// 개선 방안 1: Repository에서 직접 집계 쿼리 실행
+@Query("""
+    SELECT new kr.hhplus.be.server.product.dto.PopularProductStats(
+        oi.productId,
+        oi.productName,
+        oi.productPrice,
+        SUM(oi.quantity),
+        SUM(oi.subtotal)
+    )
+    FROM OrderItem oi
+    WHERE oi.createdAt >= :startDate
+    GROUP BY oi.productId, oi.productName, oi.productPrice
+    ORDER BY SUM(oi.quantity) DESC
+    """)
+List<PopularProductStats> findPopularProducts(
+    @Param("startDate") LocalDateTime startDate,
+    Pageable pageable
 );
-
--- 실시간 집계 쿼리 (최근 30일)
-SELECT
-    product_id,
-    SUM(total_quantity) as total_quantity,
-    SUM(total_amount) as total_amount
-FROM daily_product_stats
-WHERE stats_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-GROUP BY product_id
-ORDER BY total_quantity DESC
-LIMIT 5;
 ```
 
----
-
-## 4. 성능 개선 전후 비교
-
-### 4.1 인기 상품 통계 쿼리
-
-#### **개선 후 실행계획**
-
-```sql
-EXPLAIN SELECT
-    product_id, product_name, product_price,
-    SUM(quantity) as total_quantity,
-    SUM(subtotal) as total_amount
-FROM order_items
-USE INDEX (idx_order_items_stats_covering)
-WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-GROUP BY product_id, product_name, product_price
-ORDER BY total_quantity DESC
-LIMIT 5;
-```
-
-**개선된 실행계획:**
-| id | select_type | table | type | key | rows | Extra |
-|----|-------------|-------|------|-----|------|--------|
-| 1 | SIMPLE | order_items | **range** | **idx_order_items_stats_covering** | **15,000** | Using where; Using index |
-
-**✅ 개선 효과:**
-
-- **type: range** → 인덱스 범위 스캔
-- **rows: 15,000** → 필요한 데이터만 스캔 (33배 감소)
-- **Using index** → 커버링 인덱스로 테이블 접근 제거
-- **No filesort** → 인덱스 정렬 활용
-
-#### **성능 개선 결과**
-
-| 항목          | 개선 전   | 개선 후   | 개선율       |
-| ------------- | --------- | --------- | ------------ |
-| 응답시간      | 3.2초     | **0.1초** | **97% 개선** |
-| 스캔 행 수    | 500,000행 | 15,000행  | **97% 감소** |
-| CPU 사용률    | 85%       | 15%       | **82% 감소** |
-| 메모리 사용량 | 500MB     | 5MB       | **99% 감소** |
-
-### 4.2 사용자 주문 목록 조회
-
-#### **개선 후 실행계획**
-
-```sql
-EXPLAIN SELECT * FROM orders
-WHERE user_id = 12345
-ORDER BY created_at DESC;
-```
-
-**개선된 실행계획:**
-| id | select_type | table | type | key | rows | Extra |
-|----|-------------|-------|------|-----|------|--------|
-| 1 | SIMPLE | orders | **ref** | **idx_orders_user_created** | **25** | Using index condition |
-
-**✅ 개선 효과:**
-
-- **type: ref** → 인덱스 참조 스캔
-- **rows: 25** → 해당 사용자 주문만 스캔
-- **No filesort** → 인덱스 정렬 활용
-
-#### **성능 개선 결과**
-
-| 항목       | 개선 전   | 개선 후    | 개선율         |
-| ---------- | --------- | ---------- | -------------- |
-| 응답시간   | 0.8초     | **0.02초** | **96% 개선**   |
-| 스캔 행 수 | 100,000행 | 25행       | **99.9% 감소** |
-
-### 4.3 N+1 문제 해결 (Batch Fetch)
-
-#### **개선 전: N+1 쿼리**
-
-```
-사용자 주문 10개 조회:
-- 주문 목록 쿼리: 1번
-- 주문항목 쿼리: 10번
-총 11번 쿼리 실행
-```
-
-#### **개선 후: Batch 쿼리**
-
-```
-사용자 주문 10개 조회:
-- 주문 목록 쿼리: 1번
-- 주문항목 Batch 쿼리: 1번 (WHERE order_id IN (...))
-총 2번 쿼리 실행
-```
-
-**성능 개선 결과:**
-
-- **쿼리 수**: 11개 → 2개 (82% 감소)
-- **응답시간**: 0.5초 → 0.05초 (90% 개선)
-
----
-
-## 5. 결론 및 권장사항
-
-### 5.1 핵심 성과
-
-#### ✅ **적용한 최적화 기법**
-
-1. **복합 인덱스 설계**: 쿼리 패턴 기반 최적 인덱스 구성
-2. **커버링 인덱스**: 테이블 접근 제거로 I/O 90% 감소
-3. **Batch Fetch**: N+1 문제 해결로 쿼리 수 82% 감소
-4. **실행계획 분석**: EXPLAIN 기반 과학적 최적화
-
-#### 📊 **전체 성능 개선 결과**
-
-- **평균 응답시간**: 1.5초 → 0.06초 (**96% 개선**)
-- **처리량**: 100 TPS → 1,500 TPS (**15배 향상**)
-- **DB CPU 사용률**: 80% → 20% (**75% 감소**)
-
-### 5.2 운영 환경 적용 권장사항
-
-#### **1단계: 안전한 인덱스 추가**
-
-```sql
--- 운영 중 온라인으로 안전하게 추가 가능
-CREATE INDEX CONCURRENTLY idx_orders_user_created
-ON orders(user_id, created_at DESC);
-
-CREATE INDEX CONCURRENTLY idx_order_items_created_product
-ON order_items(created_at, product_id);
-```
-
-#### **2단계: 애플리케이션 설정 변경**
+#### **N+1 문제 해결 방안**
 
 ```yaml
+# application.yml - Batch Fetch 설정
 spring:
   jpa:
     properties:
@@ -386,50 +189,150 @@ spring:
         default_batch_fetch_size: 100
 ```
 
-#### **3단계: 모니터링 지표 설정**
-
-- **응답시간 임계값**: 500ms
-- **슬로우 쿼리 로그**: 1초 이상 쿼리 기록
-- **인덱스 사용률**: 주간 리포트
-
-### 5.3 향후 고도화 방안
-
-#### **단기 (1개월)**
-
-- **실시간 통계 테이블** 도입
-- **쿼리 캐시** 적용 (Redis)
-- **읽기 전용 복제본** 구성
-
-#### **중기 (3개월)**
-
-- **파티셔닝** 도입 (월별 order_items 분할)
-- **집계 배치 처리** 도입
-- **DB 성능 모니터링** 대시보드 구축
-
-#### **장기 (6개월)**
-
-- **샤딩 전략** 수립 (사용자 기반)
-- **NoSQL 하이브리드** 구조 검토
-- **마이크로서비스** 분리 검토
-
-### 5.4 위험 요소 및 대응방안
-
-#### ⚠️ **주의사항**
-
-1. **인덱스 크기 증가**: 스토리지 사용량 20% 증가 예상
-2. **쓰기 성능 영향**: INSERT/UPDATE 시 인덱스 유지 비용
-3. **메모리 사용량**: 인덱스 캐시를 위한 메모리 필요
-
-#### 🛡️ **대응방안**
-
-1. **스토리지 확장**: SSD 용량 20% 증설
-2. **배치 처리**: 대량 데이터 처리 시 인덱스 비활성화 옵션
-3. **메모리 모니터링**: Buffer Pool 크기 조정
+```java
+// 개선된 주문 조회 로직
+@Query("""
+    SELECT DISTINCT o FROM Order o
+    LEFT JOIN FETCH o.orderItems
+    WHERE o.userId = :userId
+    ORDER BY o.createdAt DESC
+    """)
+List<Order> findByUserIdWithItems(@Param("userId") Long userId);
+```
 
 ---
 
-## 📈 최종 요약
+## 4. 성능 개선 예상 효과
 
-**데이터 기반 성능 최적화**를 통해 시스템의 처리 성능을 **15배 향상**시켰습니다. 특히 인기 상품 통계 조회의 경우 **97% 응답시간 단축**을 달성하여, 대용량 트래픽 환경에서도 안정적인 서비스 제공이 가능해졌습니다.
+### 4.1 인기 상품 통계 쿼리 개선 예상
 
-핵심은 **실행계획 분석을 통한 과학적 접근**과 **비즈니스 특성을 고려한 인덱스 설계**였으며, 이를 통해 단순한 성능 개선을 넘어 **확장 가능한 아키텍처**의 기반을 마련했습니다.
+#### **개선 전 (현재)**
+
+- **데이터 처리**: 전체 500만건 메모리 로딩
+- **예상 응답시간**: 10-30초 (메모리 부족 시 실패)
+- **CPU 사용률**: 90%+
+- **메모리 사용량**: 1GB+ (OOM 위험)
+
+#### **개선 후 (인덱스 적용)**
+
+- **데이터 처리**: 필요한 30일 데이터만 (약 50만건)
+- **예상 응답시간**: 0.5-2초
+- **CPU 사용률**: 30-50%
+- **메모리 사용량**: 100MB 이하
+
+### 4.2 사용자 주문 조회 개선 예상
+
+#### **개선 전**
+
+- **스캔 방식**: 전체 orders 테이블 스캔
+- **쿼리 수**: 1 + N번 (N+1 문제)
+- **예상 응답시간**: 1-3초
+
+#### **개선 후**
+
+- **스캔 방식**: 인덱스 범위 스캔
+- **쿼리 수**: 1-2번 (Batch Fetch)
+- **예상 응답시간**: 0.05-0.2초
+
+---
+
+## 5. 구현된 최적화 방안
+
+### 5.1 구현 완료 항목
+
+#### ✅ **1. 성능 테스트 인프라 구축**
+
+- `PerformanceTestDataLoader`: 대용량 테스트 데이터 생성
+- `PerformanceTestController`: 성능 비교 API 엔드포인트
+- `application-performance.yml`: 성능 테스트 전용 설정
+
+#### ✅ **2. 인덱스 생성 스크립트 작성**
+
+```sql
+-- 구현된 최적화 인덱스들
+CREATE INDEX idx_order_items_created_product ON order_items(created_at, product_id);
+CREATE INDEX idx_order_items_stats_covering ON order_items(created_at, product_id, quantity, subtotal, product_name, product_price);
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at DESC);
+CREATE INDEX idx_balance_histories_user_created ON balance_histories(user_id, created_at DESC);
+```
+
+#### ✅ **3. 성능 모니터링 API 구현**
+
+- 실행계획 분석 API
+- 인덱스 사용률 확인 API
+- 테이블 통계 정보 API
+
+### 5.2 현재 아키텍처의 성능 이슈
+
+#### **🔧 Entity-Domain 통합의 장단점**
+
+**장점:**
+
+- 코드 단순화로 개발 속도 향상
+- 변환 로직 제거로 오버헤드 감소
+
+**성능 고려사항:**
+
+- JPA 연관관계 매핑 제거로 N+1 문제 회피
+- Repository 2번 호출 방식으로 명시적 쿼리 제어
+
+#### **🔧 현재 Repository 패턴의 특징**
+
+```java
+// 현업 스타일: 연관관계 없이 명시적 호출
+public List<OrderResponse> getUserOrders(Long userId) {
+    List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
+
+    return orders.stream()
+        .map(order -> {
+            List<OrderItem> orderItems = orderItemRepository.findByOrderId(order.getId());
+            return convertToOrderResponse(order, orderItems);
+        })
+        .toList();
+}
+```
+
+---
+
+## 6. 향후 테스트 계획
+
+### 6.1 성능 테스트 시나리오
+
+#### **Phase 1: 기준 성능 측정**
+
+1. 대용량 데이터 생성 (100만건+ 주문 데이터)
+2. 인덱스 적용 전 성능 측정
+3. 병목 지점 식별 및 문서화
+
+#### **Phase 2: 최적화 적용 및 검증**
+
+1. 인덱스 순차적 적용
+2. 각 단계별 성능 측정
+3. 개선 효과 정량적 분석
+
+#### **Phase 3: 부하 테스트**
+
+1. 동시 사용자 1,000명 시뮬레이션
+2. 응답시간 95% 백분위수 측정
+3. 시스템 리소스 사용률 모니터링
+
+### 6.2 측정 지표
+
+#### **응답시간 지표**
+
+- 평균 응답시간
+- 95% 백분위수 응답시간
+- 최대 응답시간
+
+#### **처리량 지표**
+
+- TPS (Transactions Per Second)
+- 동시 처리 가능 요청 수
+- 에러율
+
+#### **시스템 지표**
+
+- CPU 사용률
+- 메모리 사용량
+- DB 연결 풀 사용률
+- 슬로우 쿼리 발생 빈도
