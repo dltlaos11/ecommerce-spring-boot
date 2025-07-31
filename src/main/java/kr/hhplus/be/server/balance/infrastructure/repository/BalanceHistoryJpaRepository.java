@@ -13,7 +13,7 @@ import kr.hhplus.be.server.balance.domain.BalanceHistory; //  통합된 Entity+D
 /**
  * Entity-Domain 통합 버전 JPA Repository
  */
-interface BalanceHistoryJpaRepository extends JpaRepository<BalanceHistory, Long> {
+public interface BalanceHistoryJpaRepository extends JpaRepository<BalanceHistory, Long> {
 
     /**
      * 사용자별 잔액 이력 조회 (최신순)
