@@ -389,31 +389,58 @@ class BalanceServiceTest {
         }
 
         /**
-         * 테스트용 UserBalance 객체 생성 헬퍼 메서드
+         * 테스트용 UserBalance 객체 생성 헬퍼 메서드 - 수정된 버전
          */
         private UserBalance createTestUserBalance(Long userId, String balance) {
                 UserBalance userBalance = new UserBalance(userId);
-                userBalance.setId(1L);
-                userBalance.setBalance(new BigDecimal(balance));
-                userBalance.setCreatedAt(LocalDateTime.now());
-                userBalance.setUpdatedAt(LocalDateTime.now());
+
+                // Reflection을 사용하여 private 필드에 접근 (테스트 전용)
+                try {
+                        java.lang.reflect.Field idField = UserBalance.class.getDeclaredField("id");
+                        idField.setAccessible(true);
+                        idField.set(userBalance, 1L);
+
+                        java.lang.reflect.Field balanceField = UserBalance.class.getDeclaredField("balance");
+                        balanceField.setAccessible(true);
+                        balanceField.set(userBalance, new BigDecimal(balance));
+
+                        java.lang.reflect.Field createdAtField = UserBalance.class.getDeclaredField("createdAt");
+                        createdAtField.setAccessible(true);
+                        createdAtField.set(userBalance, LocalDateTime.now());
+
+                        java.lang.reflect.Field updatedAtField = UserBalance.class.getDeclaredField("updatedAt");
+                        updatedAtField.setAccessible(true);
+                        updatedAtField.set(userBalance, LocalDateTime.now());
+
+                } catch (Exception e) {
+                        throw new RuntimeException("테스트 데이터 생성 실패", e);
+                }
+
                 return userBalance;
         }
 
         /**
-         * 테스트용 BalanceHistory 객체 생성 헬퍼 메서드
+         * 테스트용 BalanceHistory 객체 생성 헬퍼 메서드 - 수정된 버전
          */
         private BalanceHistory createTestBalanceHistory(Long userId,
                         BalanceHistory.TransactionType type,
                         String amount) {
-                BalanceHistory history = new BalanceHistory();
-                history.setId(1L);
-                history.setUserId(userId);
-                history.setTransactionType(type);
-                history.setAmount(new BigDecimal(amount));
-                history.setBalanceAfter(new BigDecimal("50000.00"));
-                history.setDescription("테스트 이력");
-                history.setCreatedAt(LocalDateTime.now());
+                // 생성자를 사용하여 생성
+                BalanceHistory history = BalanceHistory.createChargeHistory(
+                                userId,
+                                new BigDecimal(amount),
+                                new BigDecimal("50000.00"),
+                                "TEST_TX_" + System.currentTimeMillis());
+
+                // Reflection으로 ID와 생성시간 설정
+                try {
+                        java.lang.reflect.Field idField = BalanceHistory.class.getDeclaredField("id");
+                        idField.setAccessible(true);
+                        idField.set(history, 1L);
+                } catch (Exception e) {
+                        throw new RuntimeException("테스트 데이터 생성 실패", e);
+                }
+
                 return history;
         }
 }

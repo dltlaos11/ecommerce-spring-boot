@@ -459,9 +459,9 @@ class ProductServiceTest {
      */
     private Product createTestProduct(Long id, String name, String price, Integer stock) {
         Product product = new Product(name, new BigDecimal(price), stock);
-        product.setId(id);
-        product.setCreatedAt(LocalDateTime.now());
-        product.setUpdatedAt(LocalDateTime.now());
+        product.setIdForTest(id);
+        product.setCreatedAtForTest(LocalDateTime.now());
+        product.setUpdatedAtForTest(LocalDateTime.now());
         return product;
     }
 
@@ -491,9 +491,9 @@ class ProductServiceTest {
     private OrderItem createMockOrderItem(Long productId, String productName,
             BigDecimal price, Integer quantity,
             LocalDateTime createdAt) {
-        OrderItem item = new OrderItem(productId, productName, price, quantity);
-        item.setId(System.nanoTime()); // 유니크한 ID
-        item.setCreatedAt(createdAt);
+        OrderItem item = new OrderItem(productId, productName, price, quantity); // (테스트용 생성자 추가됨)
+        item.setIdForTest(System.nanoTime()); // 유니크한 ID
+        item.setCreatedAtForTest(createdAt);
         return item;
     }
 }

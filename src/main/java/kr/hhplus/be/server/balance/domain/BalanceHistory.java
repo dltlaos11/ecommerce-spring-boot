@@ -161,4 +161,85 @@ public class BalanceHistory {
         return String.format("BalanceHistory{userId=%d, type=%s, amount=%s, balanceAfter=%s}",
                 userId, transactionType, amount, balanceAfter);
     }
+    // ======================== 테스트를 위한 생성자 및 setter ========================
+
+    // /**
+    // * 테스트 전용 기본 생성자
+    // *
+    // * @deprecated 테스트에서만 사용
+    // */
+    // @Deprecated
+    // public BalanceHistory() {
+    // // 테스트용 기본 생성자
+    // }
+
+    /**
+     * 테스트 전용 - ID 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    /**
+     * 테스트 전용 - 사용자 ID 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setUserIdForTest(Long userId) {
+        this.userId = userId;
+    }
+
+    /**
+     * 테스트 전용 - 거래 유형 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setTransactionTypeForTest(TransactionType transactionType) {
+        this.transactionType = transactionType;
+    }
+
+    /**
+     * 테스트 전용 - 금액 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setAmountForTest(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    /**
+     * 테스트 전용 - 거래 후 잔액 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setBalanceAfterForTest(BigDecimal balanceAfter) {
+        this.balanceAfter = balanceAfter;
+    }
+
+    /**
+     * 테스트 전용 - 설명 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setDescriptionForTest(String description) {
+        this.description = description;
+    }
+
+    /**
+     * 테스트 전용 - 생성시간 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }

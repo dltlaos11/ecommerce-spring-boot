@@ -223,4 +223,41 @@ public class Coupon {
         return String.format("Coupon{id=%d, name='%s', type=%s, issued=%d/%d}",
                 id, name, discountType, issuedQuantity, totalQuantity);
     }
+
+    // ========== Coupon.java 추가 ==========
+    /**
+     * 테스트 전용 setter 메서드들
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    @Deprecated
+    public void setIssuedQuantityForTest(Integer issuedQuantity) {
+        this.issuedQuantity = issuedQuantity;
+    }
+
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    @Deprecated
+    public void setUpdatedAtForTest(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    @Deprecated
+    public void setMaxDiscountAmountForTest(BigDecimal maxDiscountAmount) {
+        this.maxDiscountAmount = maxDiscountAmount;
+    }
+
+    @Deprecated
+    public void setMinimumOrderAmountForTest(BigDecimal minimumOrderAmount) {
+        this.minimumOrderAmount = minimumOrderAmount;
+    }
+
 }

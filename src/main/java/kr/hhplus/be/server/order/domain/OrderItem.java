@@ -129,6 +129,37 @@ public class OrderItem {
         }
     }
 
+    /**
+     * 테스트 전용 생성자 (orderId 없이)
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public OrderItem(Long productId, String productName, BigDecimal productPrice, Integer quantity) {
+        validateInputs(productId, productName, productPrice, quantity);
+        this.orderId = null; // 테스트에서는 null
+        this.productId = productId;
+        this.productName = productName;
+        this.productPrice = productPrice;
+        this.quantity = quantity;
+        this.subtotal = calculateSubtotal(productPrice, quantity);
+    }
+
+    /**
+     * 테스트 전용 setter 메서드들
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
     @Override
     public String toString() {
         return String.format("OrderItem{id=%d, orderId=%d, productId=%d, productName='%s', quantity=%d, subtotal=%s}",

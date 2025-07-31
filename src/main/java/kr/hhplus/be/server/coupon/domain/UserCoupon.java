@@ -159,6 +159,27 @@ public class UserCoupon {
         this.updatedAt = updatedAt;
     }
 
+    // ========== UserCoupon.java 추가 ==========
+    /**
+     * 테스트 전용 setter 메서드들
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    @Deprecated
+    public void setUpdatedAtForTest(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     @Override
     public String toString() {
         return String.format("UserCoupon{id=%d, userId=%d, couponId=%d, status=%s}",
