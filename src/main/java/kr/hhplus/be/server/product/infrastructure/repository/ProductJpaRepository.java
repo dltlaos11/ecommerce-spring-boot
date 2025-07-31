@@ -15,7 +15,7 @@ import kr.hhplus.be.server.product.domain.Product; // ✅ 통합된 Entity+Domai
 /**
  * ✅ Entity-Domain 통합 버전 JPA Repository
  */
-interface ProductJpaRepository extends JpaRepository<Product, Long> {
+public interface ProductJpaRepository extends JpaRepository<Product, Long> {
 
     /**
      * 비관적 락으로 상품 조회 (재고 차감용)
