@@ -1,41 +1,40 @@
 spring:
-  # 테스트용 데이터소스 설정 (TestContainer가 동적으로 오버라이드)
-  datasource:
-    url: jdbc:h2:mem:testdb;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-
-  # JPA 테스트 설정
+  # TestContainer에서 자동 설정됨
   jpa:
     hibernate:
-      ddl-auto: create-drop # 테스트마다 스키마 재생성
+      ddl-auto: create-drop
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
-        default_batch_fetch_size: 100
-        show_sql: true
-        format_sql: true
-        use_sql_comments: true
-    show-sql: true
+        show_sql: false
+        format_sql: false
+    show-sql: false
+    defer-datasource-initialization: true
 
-  # JPA Auditing 활성화
+  # JPA Auditing
   data:
     jpa:
       repositories:
         enabled: true
 
-# 로깅 설정 (테스트용)
+# 로깅 최소화
 logging:
   level:
-    kr.hhplus.be.server: DEBUG
-    org.springframework.transaction: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.testcontainers: INFO
+    kr.hhplus.be.server: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.testcontainers: WARN
+    com.zaxxer.hikari: ERROR
+    com.mysql: ERROR
 
-# Swagger는 테스트에서 비활성화
+# Swagger 비활성화
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
+
+# TestContainer 설정
+testcontainers:
+  reuse:
+    enable: false
