@@ -1,0 +1,51 @@
+spring:
+  # TestContainer에서 자동 설정됨
+  datasource:
+    # HikariCP 연결 풀 최적화 - 핵심 문제 해결!
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      leak-detection-threshold: 0 # 비활성화
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        show_sql: false
+        format_sql: false
+        default_batch_fetch_size: 100
+    show-sql: false
+    defer-datasource-initialization: true
+
+  # JPA Auditing
+  data:
+    jpa:
+      repositories:
+        enabled: true
+
+# 로깅 최소화
+logging:
+  level:
+    kr.hhplus.be.server: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.testcontainers: WARN
+    com.zaxxer.hikari: ERROR
+    com.mysql: ERROR
+
+# Swagger 비활성화
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+# TestContainer 설정
+testcontainers:
+  reuse:
+    enable: true

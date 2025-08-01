@@ -3,35 +3,52 @@ package kr.hhplus.be.server.balance.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 잔액 변동 이력 도메인 모델
- * 
- * 설계 원칙:
- * - 불변 데이터 (생성 후 수정 불가)
- * - 감사(Audit) 목적의 이력 데이터
- * - 잔액 추적 및 문제 해결 지원
- * 
- * 책임:
- * - 잔액 변동 내역 기록
- * - 거래 추적 정보 제공
- * - 잔액 계산 검증 지원
+ * ✅ 현업 스타일: Entity + Domain 통합
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Entity
+@Table(name = "balance_histories", indexes = {
+        @Index(name = "idx_balance_histories_user_created", columnList = "user_id, created_at"),
+        @Index(name = "idx_balance_histories_transaction_id", columnList = "transaction_id")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class BalanceHistory {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long userId;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId; // 🚫 연관관계 없이 단순 FK
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transaction_type", nullable = false)
     private TransactionType transactionType;
+
+    @Column(name = "amount", precision = 15, scale = 2, nullable = false)
     private BigDecimal amount;
-    private BigDecimal balanceAfter; // 거래 후 잔액 (비정규화로 조회 성능 향상)
+
+    @Column(name = "balance_after", precision = 15, scale = 2, nullable = false)
+    private BigDecimal balanceAfter;
+
+    @Column(name = "description")
     private String description;
-    private String transactionId; // 외부 거래 ID (결제 시스템 연동용)
+
+    @Column(name = "transaction_id")
+    private String transactionId;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
@@ -41,7 +58,7 @@ public class BalanceHistory {
         CHARGE("CHARGE", "충전"),
         PAYMENT("PAYMENT", "결제"),
         REFUND("REFUND", "환불"),
-        ADJUSTMENT("ADJUSTMENT", "조정"); // 관리자 수동 조정
+        ADJUSTMENT("ADJUSTMENT", "조정");
 
         private final String code;
         private final String description;
@@ -60,9 +77,8 @@ public class BalanceHistory {
         }
     }
 
-    /**
-     * 새 이력 생성용 생성자
-     */
+    // ======================== 생성자 ========================
+
     public BalanceHistory(Long userId, TransactionType transactionType,
             BigDecimal amount, BigDecimal balanceAfter,
             String description) {
@@ -71,12 +87,8 @@ public class BalanceHistory {
         this.amount = amount;
         this.balanceAfter = balanceAfter;
         this.description = description;
-        this.createdAt = LocalDateTime.now();
     }
 
-    /**
-     * 거래 ID가 있는 이력 생성 (결제 시스템 연동용)
-     */
     public BalanceHistory(Long userId, TransactionType transactionType,
             BigDecimal amount, BigDecimal balanceAfter,
             String description, String transactionId) {
@@ -84,9 +96,8 @@ public class BalanceHistory {
         this.transactionId = transactionId;
     }
 
-    /**
-     * 충전 이력 생성 팩토리 메서드
-     */
+    // ======================== 팩토리 메서드 (기존 Domain 로직) ========================
+
     public static BalanceHistory createChargeHistory(Long userId, BigDecimal amount,
             BigDecimal balanceAfter, String transactionId) {
         return new BalanceHistory(
@@ -98,9 +109,6 @@ public class BalanceHistory {
                 transactionId);
     }
 
-    /**
-     * 결제 이력 생성 팩토리 메서드
-     */
     public static BalanceHistory createPaymentHistory(Long userId, BigDecimal amount,
             BigDecimal balanceAfter, String orderId) {
         return new BalanceHistory(
@@ -112,9 +120,6 @@ public class BalanceHistory {
                 orderId);
     }
 
-    /**
-     * 환불 이력 생성 팩토리 메서드
-     */
     public static BalanceHistory createRefundHistory(Long userId, BigDecimal amount,
             BigDecimal balanceAfter, String orderId) {
         return new BalanceHistory(
@@ -126,23 +131,12 @@ public class BalanceHistory {
                 orderId);
     }
 
-    /**
-     * ID 설정 (Repository에서 호출)
-     */
-    public void setId(Long id) {
-        this.id = id;
-    }
+    // ======================== 비즈니스 로직 ========================
 
-    /**
-     * 거래 유형의 한글 이름 반환
-     */
     public String getTransactionTypeName() {
         return transactionType != null ? transactionType.getDescription() : "";
     }
 
-    /**
-     * 입금/출금 구분
-     */
     public boolean isDeposit() {
         return transactionType == TransactionType.CHARGE ||
                 transactionType == TransactionType.REFUND;
@@ -152,12 +146,100 @@ public class BalanceHistory {
         return transactionType == TransactionType.PAYMENT;
     }
 
-    /**
-     * 디버깅 및 로깅용 toString
-     */
+    // ======================== JPA를 위한 setter ========================
+
+    void setId(Long id) {
+        this.id = id;
+    }
+
+    void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
     @Override
     public String toString() {
         return String.format("BalanceHistory{userId=%d, type=%s, amount=%s, balanceAfter=%s}",
                 userId, transactionType, amount, balanceAfter);
+    }
+    // ======================== 테스트를 위한 생성자 및 setter ========================
+
+    // /**
+    // * 테스트 전용 기본 생성자
+    // *
+    // * @deprecated 테스트에서만 사용
+    // */
+    // @Deprecated
+    // public BalanceHistory() {
+    // // 테스트용 기본 생성자
+    // }
+
+    /**
+     * 테스트 전용 - ID 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    /**
+     * 테스트 전용 - 사용자 ID 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setUserIdForTest(Long userId) {
+        this.userId = userId;
+    }
+
+    /**
+     * 테스트 전용 - 거래 유형 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setTransactionTypeForTest(TransactionType transactionType) {
+        this.transactionType = transactionType;
+    }
+
+    /**
+     * 테스트 전용 - 금액 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setAmountForTest(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    /**
+     * 테스트 전용 - 거래 후 잔액 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setBalanceAfterForTest(BigDecimal balanceAfter) {
+        this.balanceAfter = balanceAfter;
+    }
+
+    /**
+     * 테스트 전용 - 설명 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setDescriptionForTest(String description) {
+        this.description = description;
+    }
+
+    /**
+     * 테스트 전용 - 생성시간 설정
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 }

@@ -6,7 +6,7 @@ import java.util.Optional;
 import kr.hhplus.be.server.coupon.domain.UserCoupon;
 
 /**
- * 사용자 쿠폰 저장소 인터페이스
+ * 사용자 쿠폰 저장소 인터페이스 (Domain Layer)
  * 
  * 설계 원칙:
  * - DIP(의존성 역전 원칙) 적용

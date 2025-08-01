@@ -3,57 +3,66 @@ package kr.hhplus.be.server.product.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import jakarta.persistence.*;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.product.exception.InsufficientStockException;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 상품 도메인 모델
- * 
- * ✨ 설계 원칙:
- * - 비즈니스 로직을 도메인 객체 내부에 캡슐화
- * - 데이터와 행위를 함께 관리하여 응집도 향상
- * - 불변성을 보장하는 메서드 제공
- * 
- * 🎯 책임:
- * - 재고 관리 (차감, 복구, 확인)
- * - 데이터 유효성 검증
- * - 상품 상태 관리
+ * ✅ 현업 스타일: Entity + Domain 통합
  */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Entity
+@Table(name = "products", indexes = {
+        @Index(name = "idx_products_name", columnList = "name"),
+        @Index(name = "idx_products_price", columnList = "price"),
+        @Index(name = "idx_products_stock", columnList = "stock_quantity")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Product {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "name", nullable = false)
     private String name;
+
+    @Column(name = "price", precision = 10, scale = 2, nullable = false)
     private BigDecimal price;
+
+    @Column(name = "stock_quantity", nullable = false)
     private Integer stockQuantity;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    /**
-     * 새 상품 생성용 생성자 (ID는 Repository에서 자동 할당)
-     */
+    // ======================== 생성자 ========================
+
     public Product(String name, BigDecimal price, Integer stockQuantity) {
         validateProductData(name, price, stockQuantity);
 
         this.name = name;
         this.price = price;
         this.stockQuantity = stockQuantity;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
+
+    // ======================== 비즈니스 로직 (기존 Domain 로직 그대로) ========================
 
     /**
      * 재고 차감
-     * 
-     * 🎯 비즈니스 규칙:
-     * - 재고가 충분한지 먼저 검증
-     * - 재고 부족 시 명확한 예외 발생
-     * - 차감 후 updatedAt 자동 갱신
      */
     public void reduceStock(int quantity) {
         if (quantity <= 0) {
@@ -67,11 +76,10 @@ public class Product {
         }
 
         this.stockQuantity -= quantity;
-        this.updatedAt = LocalDateTime.now();
     }
 
     /**
-     * 재고 복구 (주문 취소, 결제 실패 시)
+     * 재고 복구
      */
     public void restoreStock(int quantity) {
         if (quantity <= 0) {
@@ -79,7 +87,6 @@ public class Product {
         }
 
         this.stockQuantity += quantity;
-        this.updatedAt = LocalDateTime.now();
     }
 
     /**
@@ -104,11 +111,10 @@ public class Product {
 
         this.name = name;
         this.price = price;
-        this.updatedAt = LocalDateTime.now();
     }
 
     /**
-     * 재고 수량 직접 설정 (관리자 기능)
+     * 재고 수량 직접 설정
      */
     public void setStockQuantity(Integer stockQuantity) {
         if (stockQuantity < 0) {
@@ -116,26 +122,32 @@ public class Product {
         }
 
         this.stockQuantity = stockQuantity;
-        this.updatedAt = LocalDateTime.now();
     }
 
-    /**
-     * ID 설정 (Repository에서 호출)
-     */
-    public void setId(Long id) {
+    // ======================== JPA를 위한 setter ========================
+
+    void setId(Long id) {
         this.id = id;
     }
 
-    /**
-     * updatedAt 갱신 (Repository 저장 시)
-     */
-    public void setUpdatedAt(LocalDateTime updatedAt) {
+    void setName(String name) {
+        this.name = name;
+    }
+
+    void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+
+    void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
 
-    /**
-     * 상품 데이터 유효성 검증
-     */
+    // ======================== 비즈니스 로직 헬퍼 ========================
+
     private void validateProductData(String name, BigDecimal price, Integer stockQuantity) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("상품명은 필수입니다.");
@@ -150,12 +162,30 @@ public class Product {
         }
     }
 
-    /**
-     * 디버깅 및 로깅용 toString
-     */
     @Override
     public String toString() {
         return String.format("Product{id=%d, name='%s', price=%s, stock=%d}",
                 id, name, price, stockQuantity);
+    }
+
+    // ========== Product.java 추가 ==========
+    /**
+     * 테스트 전용 setter 메서드들
+     * 
+     * @deprecated 테스트에서만 사용
+     */
+    @Deprecated
+    public void setIdForTest(Long id) {
+        this.id = id;
+    }
+
+    @Deprecated
+    public void setCreatedAtForTest(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    @Deprecated
+    public void setUpdatedAtForTest(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 }

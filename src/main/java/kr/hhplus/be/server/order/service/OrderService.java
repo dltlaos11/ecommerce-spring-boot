@@ -187,12 +187,13 @@ public class OrderService {
                     }
 
                     OrderItem orderItem = new OrderItem(
+                            order.getId(),
                             itemRequest.productId(),
                             product.name(),
                             product.price(),
                             itemRequest.quantity());
 
-                    orderItem.setOrder(order);
+                    // orderItem.setOrder(order);
                     return orderItemRepository.save(orderItem);
                 })
                 .toList();
@@ -208,12 +209,13 @@ public class OrderService {
                     ProductResponse product = productService.getProduct(itemRequest.productId());
 
                     OrderItem orderItem = new OrderItem(
+                            order.getId(),
                             itemRequest.productId(),
-                            product.name(), // 실제 상품명
-                            product.price(), // 실제 상품가격
+                            product.name(),
+                            product.price(),
                             itemRequest.quantity());
 
-                    orderItem.setOrder(order);
+                    // orderItem.setOrder(order);
                     return orderItemRepository.save(orderItem);
                 })
                 .toList();

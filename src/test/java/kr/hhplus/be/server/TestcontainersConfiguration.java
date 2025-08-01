@@ -1,34 +1,29 @@
 package kr.hhplus.be.server;
 
-import jakarta.annotation.PreDestroy;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-@Configuration
-class TestcontainersConfiguration {
+/**
+ * TestContainers 설정 - 수정된 버전
+ * 
+ * 수정사항:
+ * - @ServiceConnection 사용으로 자동 연결
+ * - static 블록 제거하여 순환 참조 방지
+ * - 컨테이너 재사용 설정 추가
+ */
+@TestConfiguration(proxyBeanMethods = false)
+public class TestcontainersConfiguration {
 
-	public static final MySQLContainer<?> MYSQL_CONTAINER;
-
-	static {
-		MYSQL_CONTAINER = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
-			.withDatabaseName("hhplus")
-			.withUsername("test")
-			.withPassword("test");
-		MYSQL_CONTAINER.start();
-
-		System.setProperty("spring.datasource.url", MYSQL_CONTAINER.getJdbcUrl() + "?characterEncoding=UTF-8&serverTimezone=UTC");
-		System.setProperty("spring.datasource.username", MYSQL_CONTAINER.getUsername());
-		System.setProperty("spring.datasource.password", MYSQL_CONTAINER.getPassword());
-	}
-
-	@PreDestroy
-	public void preDestroy() {
-		if (MYSQL_CONTAINER.isRunning()) {
-			MYSQL_CONTAINER.stop();
-		}
+	@Bean
+	@ServiceConnection
+	MySQLContainer<?> mysqlContainer() {
+		return new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
+				.withDatabaseName("testdb")
+				.withUsername("test")
+				.withPassword("test")
+				.withReuse(true); // 컨테이너 재사용으로 성능 최적화
 	}
 }

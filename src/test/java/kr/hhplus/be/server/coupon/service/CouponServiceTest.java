@@ -228,8 +228,8 @@ class CouponServiceTest {
 
         // 10% 할인, 최대 50,000원, 최소 주문 100,000원
         Coupon coupon = createTestCoupon(couponId, "10% 할인 쿠폰", Coupon.DiscountType.PERCENTAGE, "10", 50, 10);
-        coupon.setMaxDiscountAmount(new BigDecimal("50000"));
-        coupon.setMinimumOrderAmount(new BigDecimal("100000"));
+        coupon.setMaxDiscountAmountForTest(new BigDecimal("50000"));
+        coupon.setMinimumOrderAmountForTest(new BigDecimal("100000"));
 
         UserCoupon userCoupon = createTestUserCoupon(1L, userId, couponId);
 
@@ -259,7 +259,7 @@ class CouponServiceTest {
         BigDecimal orderAmount = new BigDecimal("50000"); // 최소 주문 금액(100,000원) 미달
 
         Coupon coupon = createTestCoupon(couponId, "10% 할인 쿠폰", Coupon.DiscountType.PERCENTAGE, "10", 50, 10);
-        coupon.setMinimumOrderAmount(new BigDecimal("100000"));
+        coupon.setMinimumOrderAmountForTest(new BigDecimal("100000"));
 
         UserCoupon userCoupon = createTestUserCoupon(1L, userId, couponId);
 
@@ -378,10 +378,10 @@ class CouponServiceTest {
                 new BigDecimal("0"), // minimumOrderAmount
                 LocalDateTime.now().plusDays(30) // expiredAt
         );
-        coupon.setId(id);
-        coupon.setIssuedQuantity(issuedQuantity);
-        coupon.setCreatedAt(LocalDateTime.now());
-        coupon.setUpdatedAt(LocalDateTime.now());
+        coupon.setIdForTest(id);
+        coupon.setIssuedQuantityForTest(issuedQuantity);
+        coupon.setCreatedAtForTest(LocalDateTime.now());
+        coupon.setUpdatedAtForTest(LocalDateTime.now());
         return coupon;
     }
 
@@ -398,8 +398,8 @@ class CouponServiceTest {
                 new BigDecimal("0"),
                 LocalDateTime.now().minusDays(1) // 이미 만료됨
         );
-        coupon.setId(id);
-        coupon.setIssuedQuantity(10);
+        coupon.setIdForTest(id);
+        coupon.setIssuedQuantityForTest(10);
         return coupon;
     }
 
@@ -408,9 +408,9 @@ class CouponServiceTest {
      */
     private UserCoupon createTestUserCoupon(Long id, Long userId, Long couponId) {
         UserCoupon userCoupon = new UserCoupon(userId, couponId);
-        userCoupon.setId(id);
-        userCoupon.setCreatedAt(LocalDateTime.now());
-        userCoupon.setUpdatedAt(LocalDateTime.now());
+        userCoupon.setIdForTest(id);
+        userCoupon.setCreatedAtForTest(LocalDateTime.now());
+        userCoupon.setUpdatedAtForTest(LocalDateTime.now());
         return userCoupon;
     }
 }
