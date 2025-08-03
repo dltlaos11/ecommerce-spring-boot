@@ -49,7 +49,7 @@ class OrderControllerIntegrationTest extends IntegrationTestBase {
                 try {
                         verifyTestEnvironment();
                 } catch (Exception e) {
-                        logContainerStatus();
+                        // logContainerStatus();
                         throw e;
                 }
         }
