@@ -1,6 +1,7 @@
 package kr.hhplus.be.server.common.test;
 
 import java.time.Duration;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,87 +11,96 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import jakarta.persistence.EntityManager;
+
 /**
- * 통합 테스트 기본 클래스 - 완전 수정 버전
+ * 통합 테스트 기본 클래스 - 호환성 문제 해결 완료 버전
  * 
- * 주요 수정사항:
- * - TestContainers 활성화
- * - 안정적인 컨테이너 시작 보장
- * - 데이터 격리 개선
- * - 에러 처리 강화
+ * 수정사항:
+ * - withTmpFs Map 형태로 수정
+ * - EntityManager 추가로 flush 기능 제공
+ * - 안정적인 컨테이너 설정
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@Testcontainers // ✅ TestContainers 활성화
+@Testcontainers
 @Transactional
-@Sql(scripts = "/test-data-cleanup.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@TestPropertySource(properties = {
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.sql.init.mode=never",
+        "spring.jpa.defer-datasource-initialization=false",
+        "logging.level.org.testcontainers=INFO"
+})
 public abstract class IntegrationTestBase {
 
-    // ✅ 싱글톤 컨테이너 - static 초기화로 안정성 확보
-    private static final MySQLContainer<?> mysql;
-
-    static {
-        mysql = new MySQLContainer<>("mysql:8.0")
-                .withDatabaseName("testdb")
-                .withUsername("test")
-                .withPassword("test")
-                .withCommand("--default-authentication-plugin=mysql_native_password")
-                .withStartupTimeout(Duration.ofMinutes(5)) // 타임아웃 증가
-                .withConnectTimeoutSeconds(300)
-                .withReuse(true); // 컨테이너 재사용
-
-        // 즉시 시작
-        mysql.start();
-
-        if (!mysql.isRunning()) {
-            throw new IllegalStateException("❌ MySQL 컨테이너 시작 실패!");
-        }
-
-        System.out.println("✅ MySQL Container started successfully: " + mysql.getJdbcUrl());
-    }
+    @Container
+    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test")
+            .withCommand(
+                    "--default-authentication-plugin=mysql_native_password",
+                    "--character-set-server=utf8mb4",
+                    "--collation-server=utf8mb4_unicode_ci")
+            .withStartupTimeout(Duration.ofMinutes(3))
+            .withConnectTimeoutSeconds(180)
+            .withEnv("MYSQL_ROOT_PASSWORD", "root")
+            .withTmpFs(Map.of("/var/lib/mysql", "rw,noexec,nosuid,size=512m")) // Map 형태로 수정
+            .withReuse(false);
 
     @Autowired
     protected TestRestTemplate restTemplate;
 
+    @Autowired
+    protected EntityManager entityManager; // flush 기능을 위한 EntityManager 추가
+
     /**
-     * ✅ Spring Boot에 DB 설정 동적 주입
+     * Spring Boot에 MySQL 연결 정보 동적 주입
      */
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        // MySQL 연결 정보
+        // 기본 데이터소스 설정
         registry.add("spring.datasource.url", mysql::getJdbcUrl);
         registry.add("spring.datasource.username", mysql::getUsername);
         registry.add("spring.datasource.password", mysql::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
 
-        // HikariCP 최적화
+        // HikariCP 연결 풀 안정성 설정
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "5");
         registry.add("spring.datasource.hikari.minimum-idle", () -> "1");
         registry.add("spring.datasource.hikari.connection-timeout", () -> "30000");
-        registry.add("spring.datasource.hikari.idle-timeout", () -> "600000");
+        registry.add("spring.datasource.hikari.idle-timeout", () -> "300000");
+        registry.add("spring.datasource.hikari.max-lifetime", () -> "600000");
 
-        // JPA 설정
+        // JPA/Hibernate 설정
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.jpa.show-sql", () -> "false");
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.MySQLDialect");
+        registry.add("spring.jpa.properties.hibernate.format_sql", () -> "false");
 
-        // DataLoader 비활성화
-        registry.add("spring.sql.init.mode", () -> "never");
-
-        System.out.println("🔧 DB Configuration applied: " + mysql.getJdbcUrl());
+        System.out.println("🔧 TestContainers Configuration Applied:");
+        System.out.println("   JDBC URL: " + mysql.getJdbcUrl());
     }
 
     @BeforeAll
     static void beforeAll() {
         if (!mysql.isRunning()) {
-            throw new IllegalStateException("❌ MySQL 컨테이너가 실행되지 않았습니다.");
+            System.out.println("🚀 Starting MySQL container...");
+            mysql.start();
         }
-        System.out.println("✅ Test environment ready: " + mysql.getJdbcUrl());
+
+        if (!mysql.isRunning()) {
+            throw new IllegalStateException("❌ MySQL 컨테이너 시작 실패!");
+        }
+
+        System.out.println("✅ MySQL Container Ready: " + mysql.getJdbcUrl());
+        System.out.println("   Container ID: " + mysql.getContainerId());
     }
 
     @BeforeEach
@@ -98,15 +108,17 @@ public abstract class IntegrationTestBase {
         verifyTestEnvironment();
     }
 
+    /**
+     * 테스트 환경 검증
+     */
     protected void verifyTestEnvironment() {
         if (!mysql.isRunning()) {
             throw new IllegalStateException("❌ MySQL 컨테이너가 실행되지 않았습니다.");
         }
-        // System.out.println("🔍 Test environment verified");
     }
 
     /**
-     * 테스트용 고유 ID 생성 (충돌 방지)
+     * 테스트용 고유 ID 생성
      */
     protected Long generateUniqueUserId() {
         return System.currentTimeMillis() % 100000 + 1000;
@@ -117,16 +129,50 @@ public abstract class IntegrationTestBase {
     }
 
     /**
-     * 컨테이너 상태 로깅 (디버깅용)
+     * 즉시 DB 반영 (트랜잭션 문제 해결용)
+     */
+    protected void flushAndClear() {
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    /**
+     * 컨테이너 상태 로깅
      */
     protected void logContainerStatus() {
-        System.out.println("=== Container Status ===");
+        System.out.println("=== TestContainers Status ===");
         System.out.println("Running: " + mysql.isRunning());
-        System.out.println("JDBC URL: " + mysql.getJdbcUrl());
-        System.out.println("Username: " + mysql.getUsername());
+        System.out.println("Container ID: " + mysql.getContainerId());
+
+        try {
+            System.out.println("JDBC URL: " + mysql.getJdbcUrl());
+            System.out.println("Mapped Port: " + mysql.getMappedPort(3306));
+        } catch (Exception e) {
+            System.out.println("Status Error: " + e.getMessage());
+        }
+
         if (!mysql.isRunning()) {
-            System.out.println("Container Logs:");
-            System.out.println(mysql.getLogs());
+            try {
+                System.out.println("=== Container Logs ===");
+                System.out.println(mysql.getLogs());
+            } catch (Exception e) {
+                System.out.println("로그 조회 실패: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 테스트 실패 시 디버깅
+     */
+    protected void debugTestFailure(String testName, Exception e) {
+        System.err.println("❌ Test Failed: " + testName);
+        System.err.println("Error: " + e.getMessage());
+        System.err.println("Error Type: " + e.getClass().getSimpleName());
+
+        logContainerStatus();
+
+        if (e.getCause() != null) {
+            System.err.println("Root Cause: " + e.getCause().getMessage());
         }
     }
 }
