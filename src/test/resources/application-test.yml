@@ -1,14 +1,14 @@
 spring:
   # TestContainer에서 자동 설정됨
-  datasource:
-    # HikariCP 연결 풀 최적화 - 핵심 문제 해결!
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 20000
-      idle-timeout: 300000
-      max-lifetime: 600000
-      leak-detection-threshold: 0 # 비활성화
+  # datasource:
+  #   # HikariCP 연결 풀 최적화 - 핵심 문제 해결!
+  #   hikari:
+  #     maximum-pool-size: 10
+  #     minimum-idle: 2
+  #     connection-timeout: 20000
+  #     idle-timeout: 300000
+  #     max-lifetime: 600000
+  #     leak-detection-threshold: 0 # 비활성화
 
   jpa:
     hibernate:
@@ -31,12 +31,17 @@ spring:
 # 로깅 최소화
 logging:
   level:
+    # kr.hhplus.be.server: INFO
+    # org.springframework: WARN
+    # org.hibernate: WARN
+    # org.testcontainers: WARN
+    # com.zaxxer.hikari: ERROR
+    # com.mysql: ERROR
     kr.hhplus.be.server: INFO
     org.springframework: WARN
     org.hibernate: WARN
-    org.testcontainers: WARN
-    com.zaxxer.hikari: ERROR
-    com.mysql: ERROR
+    org.testcontainers: INFO
+    root: WARN
 
 # Swagger 비활성화
 springdoc:
