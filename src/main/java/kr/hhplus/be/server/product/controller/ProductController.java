@@ -7,9 +7,10 @@ import org.springframework.web.bind.annotation.*;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kr.hhplus.be.server.common.response.CommonResponse;
-import kr.hhplus.be.server.product.application.ProductUseCase; // UseCase 의존성 주입
+import kr.hhplus.be.server.product.application.ProductUseCase;
 import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
  * 변경사항:
  * - ProductService → ProductUseCase 의존성 변경
  * - HTTP 요청/응답 처리에만 집중
+ * - 재고 확인 API 추가
  */
 @Slf4j
 @RestController
@@ -28,7 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ProductController {
 
-  private final ProductUseCase productUseCase; // UseCase 의존성 주입
+  private final ProductUseCase productUseCase;
 
   /**
    * 상품 목록 조회 (필터링 지원)
@@ -79,7 +81,7 @@ public class ProductController {
   }
 
   /**
-   * 재고 확인 API (주문 전 재고 체크용)
+   * 재고 확인 API (주문 전 재고 체크용) - 🆕 새로 추가
    */
   @GetMapping("/{productId}/stock")
   @Operation(summary = "상품 재고 확인", description = "특정 상품의 재고가 충분한지 확인합니다.")
@@ -127,12 +129,13 @@ public class ProductController {
   }
 
   /**
-   * 재고 확인 응답 DTO
+   * 재고 확인 응답 DTO - 🆕 추가
    */
-  public record StockCheckResponse(
-      Long productId,
-      Integer requestedQuantity,
-      Integer currentStock,
-      Boolean available) {
+  @Schema(description = "재고 확인 응답")
+  public static record StockCheckResponse(
+      @Schema(description = "상품 ID", example = "1") Long productId,
+      @Schema(description = "요청한 수량", example = "3") Integer requestedQuantity,
+      @Schema(description = "현재 재고", example = "10") Integer currentStock,
+      @Schema(description = "재고 충분 여부", example = "true") Boolean available) {
   }
 }
