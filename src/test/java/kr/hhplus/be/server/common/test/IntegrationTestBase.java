@@ -5,8 +5,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -29,22 +27,23 @@ public abstract class IntegrationTestBase {
             .withPassword("test")
             .withCommand("--default-authentication-plugin=mysql_native_password")
             .withEnv("MYSQL_ROOT_PASSWORD", "test")
-            .withReuse(true) // 🔧 컨테이너 재사용으로 성능 최적화
+            .withReuse(false) // 일단 재사용 비활성화
             .withStartupTimeout(java.time.Duration.ofMinutes(2)); // 시작 타임아웃 증가
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+    // @DynamicPropertySource
+    // static void configureProperties(DynamicPropertyRegistry registry) {
+    // registry.add("spring.datasource.url", mysql::getJdbcUrl);
+    // registry.add("spring.datasource.username", mysql::getUsername);
+    // registry.add("spring.datasource.password", mysql::getPassword);
+    // registry.add("spring.datasource.driver-class-name", () ->
+    // "com.mysql.cj.jdbc.Driver");
 
-        // 🔧 HikariCP 연결 풀 최적화 - 핵심!
-        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "10");
-        registry.add("spring.datasource.hikari.minimum-idle", () -> "2");
-        registry.add("spring.datasource.hikari.connection-timeout", () -> "20000");
-        registry.add("spring.datasource.hikari.idle-timeout", () -> "300000");
-    }
+    // // 🔧 HikariCP 연결 풀 최적화 - 핵심!
+    // registry.add("spring.datasource.hikari.maximum-pool-size", () -> "10");
+    // registry.add("spring.datasource.hikari.minimum-idle", () -> "2");
+    // registry.add("spring.datasource.hikari.connection-timeout", () -> "20000");
+    // registry.add("spring.datasource.hikari.idle-timeout", () -> "300000");
+    // }
 
     @Autowired
     protected TestRestTemplate restTemplate;
@@ -56,6 +55,7 @@ public abstract class IntegrationTestBase {
         if (!mysql.isRunning()) {
             throw new IllegalStateException("MySQL 컨테이너가 실행되지 않았습니다.");
         }
+        System.out.println("✅ MySQL Container running: " + mysql.getJdbcUrl());
     }
 
     /**
