@@ -18,13 +18,12 @@ import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 
 /**
- * ProductController 통합 테스트
+ * ProductController 통합 테스트 - 수정된 버전
  * 
- * 테스트 범위:
- * - 상품 조회/검색 API
- * - 인기 상품 통계 API
- * - 재고 확인 API
- * - DB 연동 검증
+ * 수정사항:
+ * - DataLoader 초기 데이터 고려
+ * - 유연한 검증 로직
+ * - 고유 데이터 사용
  */
 @DisplayName("상품 관리 통합 테스트")
 @Transactional
@@ -36,13 +35,15 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     @BeforeEach
     void setUp() {
         verifyTestEnvironment();
-        // @Sql 어노테이션으로 자동 정리되므로 별도 정리 불필요
     }
 
     @Test
     @DisplayName("전체 상품 조회 통합 테스트")
     void 전체상품조회_통합테스트() {
-        // Given: 테스트 상품 생성
+        // Given: 기존 데이터 개수 확인
+        int beforeCount = productRepository.findAll().size();
+
+        // 테스트 상품 3개 추가
         setupTestProducts();
 
         // When: 전체 상품 조회 API 호출
@@ -54,16 +55,17 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().isSuccess()).isTrue();
 
-        // DB 검증
+        // 🔧 유연한 검증: 기존 데이터 + 테스트 데이터 = 총 개수
         var products = productRepository.findAll();
-        assertThat(products).hasSize(3);
+        assertThat(products.size()).isEqualTo(beforeCount + 3);
     }
 
     @Test
     @DisplayName("특정 상품 조회 통합 테스트")
     void 특정상품조회_통합테스트() {
-        // Given
+        // Given: 고유한 상품 생성
         Product savedProduct = setupProduct(generateUniqueProductName("테스트노트북"), new BigDecimal("1500000"), 10);
+        flushAndClear(); // 즉시 DB 반영
 
         // When
         ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
@@ -85,7 +87,7 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     @DisplayName("존재하지 않는 상품 조회 시 404 에러")
     void 존재하지않는상품조회_404에러() {
         // Given: 존재하지 않는 상품 ID
-        Long nonExistentId = 999L;
+        Long nonExistentId = 999999L; // 더 큰 수로 변경
 
         // When
         ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
@@ -101,29 +103,33 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName("상품명 검색 통합 테스트")
     void 상품명검색_통합테스트() {
-        // Given
-        setupProduct("고성능 노트북", new BigDecimal("1500000"), 10);
-        setupProduct("게이밍 노트북", new BigDecimal("2000000"), 5);
-        setupProduct("무선 마우스", new BigDecimal("50000"), 20);
+        // Given: 고유한 키워드 사용
+        String uniqueKeyword = "UNIQUE_" + System.currentTimeMillis();
+        setupProduct(uniqueKeyword + "_노트북1", new BigDecimal("1500000"), 10);
+        setupProduct(uniqueKeyword + "_노트북2", new BigDecimal("2000000"), 5);
+        setupProduct("일반마우스", new BigDecimal("50000"), 20);
 
-        // When: '노트북' 검색
+        // When: 고유 키워드로 검색
         ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
-                "/api/v1/products?name=노트북",
+                "/api/v1/products?name=" + uniqueKeyword,
                 CommonResponse.class);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().isSuccess()).isTrue();
 
-        // DB 검증 - '노트북'이 포함된 상품만 조회되어야 함
-        var products = productRepository.findByNameContaining("노트북");
+        // 🔧 DB 검증: 고유 키워드가 포함된 상품만 조회
+        var products = productRepository.findByNameContaining(uniqueKeyword);
         assertThat(products).hasSize(2);
     }
 
     @Test
     @DisplayName("재고 있는 상품만 조회 통합 테스트")
     void 재고있는상품조회_통합테스트() {
-        // Given
+        // Given: 기존 재고 있는 상품 개수 확인
+        int beforeAvailableCount = productRepository.findByStockQuantityGreaterThan(0).size();
+
+        // 테스트 상품 추가
         setupProduct("재고있는상품", new BigDecimal("100000"), 5);
         setupProduct("재고없는상품", new BigDecimal("200000"), 0);
 
@@ -136,10 +142,9 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().isSuccess()).isTrue();
 
-        // DB 검증 - 재고가 0보다 큰 상품만
+        // 🔧 유연한 검증: 기존 + 새로 추가된 재고 있는 상품
         var availableProducts = productRepository.findByStockQuantityGreaterThan(0);
-        assertThat(availableProducts).hasSize(1);
-        assertThat(availableProducts.get(0).getName()).isEqualTo("재고있는상품");
+        assertThat(availableProducts.size()).isEqualTo(beforeAvailableCount + 1);
     }
 
     @Test
@@ -147,6 +152,7 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     void 재고확인API_통합테스트() {
         // Given
         Product product = setupProduct("재고확인상품", new BigDecimal("50000"), 10);
+        flushAndClear(); // 즉시 DB 반영
 
         // When: 5개 수량 확인
         ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
@@ -169,6 +175,7 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     void 재고부족_재고확인API() {
         // Given
         Product product = setupProduct("재고부족상품", new BigDecimal("50000"), 3);
+        flushAndClear(); // 즉시 DB 반영
 
         // When: 5개 수량 확인 (재고 3개이므로 부족)
         ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
@@ -180,7 +187,7 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody().isSuccess()).isTrue();
 
-        // 재고 부족 정보가 응답에 포함되는지는 실제 응답 구조에 따라 검증
+        // 재고 부족 확인
         var savedProduct = productRepository.findById(product.getId());
         assertThat(savedProduct.get().hasEnoughStock(5)).isFalse();
     }
@@ -222,8 +229,8 @@ class ProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     private void setupTestProducts() {
-        setupProduct("노트북", new BigDecimal("1500000"), 10);
-        setupProduct("마우스", new BigDecimal("50000"), 20);
-        setupProduct("키보드", new BigDecimal("150000"), 15);
+        setupProduct(generateUniqueProductName("노트북"), new BigDecimal("1500000"), 10);
+        setupProduct(generateUniqueProductName("마우스"), new BigDecimal("50000"), 20);
+        setupProduct(generateUniqueProductName("키보드"), new BigDecimal("150000"), 15);
     }
 }
