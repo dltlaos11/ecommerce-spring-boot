@@ -1,7 +1,7 @@
 spring:
-  # @DynamicPropertySource에서 동적 설정하므로 datasource 설정 제거
+  # DataSource는 TestContainers에서 동적으로 설정됨
 
-  # JPA 설정 - 최소화
+  # JPA 설정
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -17,27 +17,38 @@ spring:
     show-sql: false
     defer-datasource-initialization: false
 
-  # SQL 초기화 비활성화 (DataLoader 방지)
+  # DataLoader 비활성화 (초기 데이터 방지)
   sql:
     init:
       mode: never
 
-  # 트랜잭션 최적화
+  # 트랜잭션 설정
   transaction:
     default-timeout: 30
 
-# 로깅 최적화 - 에러만 표시
+  # Jackson 설정 (JSON 처리)
+  jackson:
+    default-property-inclusion: NON_NULL
+
+# 로깅 설정 (최적화)
 logging:
   level:
-    kr.hhplus.be.server: INFO
-    org.springframework: WARN
+    kr.hhplus.be.server: DEBUG
+    org.springframework: INFO
     org.hibernate: WARN
     org.testcontainers: INFO
-    com.zaxxer.hikari: ERROR
-    com.mysql: ERROR
+    com.zaxxer.hikari: WARN
+    com.mysql: WARN
     root: WARN
 
-# TestContainers 최적화
+# TestContainers 설정
 testcontainers:
   reuse:
     enable: true
+
+# Swagger 비활성화 (테스트 환경)
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
