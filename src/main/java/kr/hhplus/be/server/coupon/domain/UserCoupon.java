@@ -57,20 +57,14 @@ public class UserCoupon {
      * 쿠폰 상태 enum
      */
     public enum CouponStatus {
-        AVAILABLE("AVAILABLE", "사용 가능"),
-        USED("USED", "사용 완료"),
-        EXPIRED("EXPIRED", "만료됨");
+        AVAILABLE("사용 가능"),
+        USED("사용 완료"),
+        EXPIRED("만료됨");
 
-        private final String code;
         private final String description;
 
-        CouponStatus(String code, String description) {
-            this.code = code;
+        CouponStatus(String description) {
             this.description = description;
-        }
-
-        public String getCode() {
-            return code;
         }
 
         public String getDescription() {
@@ -137,29 +131,14 @@ public class UserCoupon {
         return status == CouponStatus.EXPIRED;
     }
 
-    // JPA를 위한 setter
-
-    void setId(Long id) {
-        this.id = id;
+    @Override
+    public String toString() {
+        return String.format("UserCoupon{id=%d, userId=%d, couponId=%d, status=%s}",
+                id, userId, couponId, status);
     }
 
-    void setStatus(CouponStatus status) {
-        this.status = status;
-    }
+    // ======================== 테스트 전용 메서드들만 유지 ========================
 
-    void setUsedAt(LocalDateTime usedAt) {
-        this.usedAt = usedAt;
-    }
-
-    void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    // ========== UserCoupon.java 추가 ==========
     /**
      * 테스트 전용 setter 메서드들
      * 
@@ -178,11 +157,5 @@ public class UserCoupon {
     @Deprecated
     public void setUpdatedAtForTest(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    @Override
-    public String toString() {
-        return String.format("UserCoupon{id=%d, userId=%d, couponId=%d, status=%s}",
-                id, userId, couponId, status);
     }
 }
