@@ -202,8 +202,10 @@ class CouponServiceTest {
         Coupon coupon2 = createTestCoupon(2L, "쿠폰2", Coupon.DiscountType.PERCENTAGE, "10", 50, 5);
 
         when(userCouponRepository.findByUserId(userId)).thenReturn(userCoupons);
-        when(couponRepository.findById(1L)).thenReturn(Optional.of(coupon1));
-        when(couponRepository.findById(2L)).thenReturn(Optional.of(coupon2));
+
+        // ✅ N+1 해결: findAllById Mock 설정 추가
+        when(couponRepository.findAllById(List.of(1L, 2L)))
+                .thenReturn(List.of(coupon1, coupon2));
 
         // When
         List<UserCouponResponse> responses = couponService.getUserCoupons(userId);
@@ -215,7 +217,7 @@ class CouponServiceTest {
                 .containsExactly("쿠폰1", "쿠폰2");
 
         verify(userCouponRepository).findByUserId(userId);
-        verify(couponRepository, times(2)).findById(any());
+        verify(couponRepository).findAllById(List.of(1L, 2L)); // ✅ N+1 해결 검증
     }
 
     @Test
