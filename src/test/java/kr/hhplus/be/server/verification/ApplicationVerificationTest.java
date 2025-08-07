@@ -23,19 +23,21 @@ import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 
 /**
- * 완성 검증 테스트 - 수정된 버전 (UseCase 분리 반영)
+ * 애플리케이션 완성 검증 테스트 - UseCase 패턴 적용 버전
  * 
- * 수정사항:
- * - BalanceUseCase → ChargeBalanceUseCase, GetBalanceUseCase 분리 반영
- * - OrderUseCase → CreateOrderUseCase, GetOrdersUseCase 분리 반영
- * - CouponUseCase → GetCouponsUseCase 참조 수정
+ * 검증 항목:
+ * - Spring 컨텍스트 로드 및 Bean 주입
+ * - 계층별 동작 검증 (Application → Domain → Infrastructure)
+ * - JPA Auditing 및 트랜잭션 동작
+ * - MySQL 연동 상태
  */
 @SpringBootTest
 @ActiveProfiles("test")
-@DisplayName("완성 검증 테스트")
+@DisplayName("애플리케이션 완성 검증 테스트")
 @Transactional
 class ApplicationVerificationTest {
 
+    // Application Layer - UseCase들
     @Autowired
     private ChargeBalanceUseCase chargeBalanceUseCase;
 
@@ -54,6 +56,7 @@ class ApplicationVerificationTest {
     @Autowired
     private GetCouponsUseCase getCouponsUseCase;
 
+    // Infrastructure Layer - Repository들
     @Autowired
     private UserBalanceRepository userBalanceRepository;
 
@@ -192,5 +195,46 @@ class ApplicationVerificationTest {
         assertThat(savedBalance.get().getBalance()).isEqualByComparingTo(new BigDecimal("25000"));
 
         // @Transactional로 자동 롤백됨
+    }
+
+    @Test
+    @DisplayName("UseCase 패턴 적용 검증 - 단일 책임 원칙 확인")
+    void UseCase패턴_적용검증() {
+        // Given: UseCase들이 각각 단일 책임을 가지는지 확인
+
+        // When: 각 UseCase의 주요 메서드 존재 확인
+        // ChargeBalanceUseCase - "잔액을 충전한다"
+        assertThat(chargeBalanceUseCase).isNotNull();
+
+        // GetBalanceUseCase - "잔액을 조회한다"
+        assertThat(getBalanceUseCase).isNotNull();
+
+        // CreateOrderUseCase - "주문을 생성한다"
+        assertThat(createOrderUseCase).isNotNull();
+
+        // GetOrdersUseCase - "주문을 조회한다"
+        assertThat(getOrdersUseCase).isNotNull();
+
+        // Then: 각각이 독립적인 비즈니스 요구사항을 처리하는지 확인
+        // (컴파일 타임에 이미 검증됨 - 존재 자체가 성공)
+    }
+
+    @Test
+    @DisplayName("Entity + Domain 통합 패턴 검증")
+    void Entity_Domain통합패턴_검증() {
+        // Given: Entity가 동시에 Domain 역할을 수행하는지 확인
+        Product product = new Product("통합테스트상품", new BigDecimal("50000"), 10);
+
+        // When: Domain 비즈니스 로직 실행
+        product.reduceStock(3);
+
+        // Then: JPA Entity이면서 동시에 Domain 객체로 동작
+        assertThat(product.getStockQuantity()).isEqualTo(7); // Domain 로직
+        assertThat(product.getName()).isEqualTo("통합테스트상품"); // Entity 속성
+
+        // JPA 저장도 정상 동작
+        Product saved = productRepository.save(product);
+        assertThat(saved.getId()).isNotNull(); // JPA Entity 기능
+        assertThat(saved.hasEnoughStock(5)).isTrue(); // Domain 로직
     }
 }

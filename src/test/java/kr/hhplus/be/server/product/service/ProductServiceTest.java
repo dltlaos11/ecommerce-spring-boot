@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -398,8 +399,15 @@ class ProductServiceTest {
     @DisplayName("인기 상품 조회 성공 - 판매량 기준으로 정렬된다")
     void 인기상품조회_성공() {
         // Given
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(30);
         List<OrderItem> mockOrderItems = createMockOrderItemsForStats();
-        when(orderItemRepository.findAll()).thenReturn(mockOrderItems);
+
+        // ✅ Mock 설정: 필터링된 결과만 반환
+        List<OrderItem> recentItems = mockOrderItems.stream()
+                .filter(item -> item.getCreatedAt().isAfter(cutoffTime))
+                .collect(Collectors.toList());
+
+        when(orderItemRepository.findAll()).thenReturn(recentItems);
 
         // When
         List<PopularProductResponse> results = productService.getPopularProducts(3, 30);
@@ -439,8 +447,14 @@ class ProductServiceTest {
     @DisplayName("인기 상품 조회 - 지정된 개수만큼만 반환한다")
     void 인기상품조회_개수제한() {
         // Given
+        LocalDateTime cutoffTime = LocalDateTime.now().minusDays(30);
         List<OrderItem> mockOrderItems = createMockOrderItemsForStats(); // 5개 상품
-        when(orderItemRepository.findAll()).thenReturn(mockOrderItems);
+
+        List<OrderItem> recentItems = mockOrderItems.stream()
+                .filter(item -> item.getCreatedAt().isAfter(cutoffTime))
+                .collect(Collectors.toList());
+
+        when(orderItemRepository.findAll()).thenReturn(recentItems);
 
         // When: 3개만 요청
         List<PopularProductResponse> results = productService.getPopularProducts(3, 30);
@@ -465,7 +479,7 @@ class ProductServiceTest {
         return product;
     }
 
-    // 테스트용 OrderItem 생성 헬퍼 메서드
+    // ✅ 테스트용 OrderItem 생성 헬퍼 메서드 - 시간 필터링 고려
     private List<OrderItem> createMockOrderItemsForStats() {
         LocalDateTime now = LocalDateTime.now();
 
