@@ -20,12 +20,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import jakarta.persistence.EntityManager;
 
 /**
- * 통합 테스트 기본 클래스 - 호환성 문제 해결 완료 버전
+ * 통합 테스트 기본 클래스 - 개선된 버전
  * 
- * 수정사항:
- * - withTmpFs Map 형태로 수정
- * - EntityManager 추가로 flush 기능 제공
- * - 안정적인 컨테이너 설정
+ * 개선사항:
+ * - 더 상세한 디버깅 정보 제공
+ * - TestContainers 안정성 향상
+ * - 에러 진단 기능 강화
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -35,12 +35,14 @@ import jakarta.persistence.EntityManager;
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.sql.init.mode=never",
         "spring.jpa.defer-datasource-initialization=false",
-        "logging.level.org.testcontainers=INFO"
+        "logging.level.org.testcontainers=INFO",
+        "logging.level.org.springframework.web=DEBUG", // 웹 관련 디버깅 활성화
+        "logging.level.org.springframework.boot.web=DEBUG" // 부트 웹 디버깅 활성화
 })
 public abstract class IntegrationTestBase {
 
     @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+    protected static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("testdb")
             .withUsername("test")
             .withPassword("test")
@@ -51,14 +53,14 @@ public abstract class IntegrationTestBase {
             .withStartupTimeout(Duration.ofMinutes(3))
             .withConnectTimeoutSeconds(180)
             .withEnv("MYSQL_ROOT_PASSWORD", "root")
-            .withTmpFs(Map.of("/var/lib/mysql", "rw,noexec,nosuid,size=512m")) // Map 형태로 수정
+            .withTmpFs(Map.of("/var/lib/mysql", "rw,noexec,nosuid,size=512m"))
             .withReuse(false);
 
     @Autowired
     protected TestRestTemplate restTemplate;
 
     @Autowired
-    protected EntityManager entityManager; // flush 기능을 위한 EntityManager 추가
+    protected EntityManager entityManager;
 
     /**
      * Spring Boot에 MySQL 연결 정보 동적 주입
@@ -80,18 +82,23 @@ public abstract class IntegrationTestBase {
 
         // JPA/Hibernate 설정
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-        registry.add("spring.jpa.show-sql", () -> "false");
+        registry.add("spring.jpa.show-sql", () -> "false"); // 성능을 위해 false
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.MySQLDialect");
         registry.add("spring.jpa.properties.hibernate.format_sql", () -> "false");
 
+        // 개선된 로깅
         System.out.println("🔧 TestContainers Configuration Applied:");
         System.out.println("   JDBC URL: " + mysql.getJdbcUrl());
+        System.out.println("   Database: " + mysql.getDatabaseName());
+        System.out.println("   Username: " + mysql.getUsername());
     }
 
     @BeforeAll
     static void beforeAll() {
+        System.out.println("🚀 Starting Integration Test Environment...");
+
         if (!mysql.isRunning()) {
-            System.out.println("🚀 Starting MySQL container...");
+            System.out.println("🔄 Starting MySQL container...");
             mysql.start();
         }
 
@@ -99,8 +106,10 @@ public abstract class IntegrationTestBase {
             throw new IllegalStateException("❌ MySQL 컨테이너 시작 실패!");
         }
 
-        System.out.println("✅ MySQL Container Ready: " + mysql.getJdbcUrl());
-        System.out.println("   Container ID: " + mysql.getContainerId());
+        System.out.println("✅ MySQL Container Ready:");
+        System.out.println("   🔗 JDBC URL: " + mysql.getJdbcUrl());
+        System.out.println("   📦 Container ID: " + mysql.getContainerId());
+        System.out.println("   🚀 Startup Time: " + mysql.getStartupAttempts() + " attempts");
     }
 
     @BeforeEach
@@ -109,11 +118,31 @@ public abstract class IntegrationTestBase {
     }
 
     /**
-     * 테스트 환경 검증
+     * 테스트 환경 검증 - 개선된 버전
      */
     protected void verifyTestEnvironment() {
         if (!mysql.isRunning()) {
             throw new IllegalStateException("❌ MySQL 컨테이너가 실행되지 않았습니다.");
+        }
+
+        // 추가 검증
+        try {
+            // RestTemplate이 정상 주입되었는지 확인
+            if (restTemplate == null) {
+                throw new IllegalStateException("❌ TestRestTemplate이 주입되지 않았습니다.");
+            }
+
+            // EntityManager 확인
+            if (entityManager == null) {
+                throw new IllegalStateException("❌ EntityManager가 주입되지 않았습니다.");
+            }
+
+            System.out.println("✅ Test Environment Verified");
+
+        } catch (Exception e) {
+            System.err.println("❌ Test Environment Verification Failed: " + e.getMessage());
+            logContainerStatus();
+            throw e;
         }
     }
 
@@ -132,23 +161,35 @@ public abstract class IntegrationTestBase {
      * 즉시 DB 반영 (트랜잭션 문제 해결용)
      */
     protected void flushAndClear() {
-        entityManager.flush();
-        entityManager.clear();
+        try {
+            entityManager.flush();
+            entityManager.clear();
+            System.out.println("💾 EntityManager flush & clear completed");
+        } catch (Exception e) {
+            System.err.println("❌ EntityManager flush & clear failed: " + e.getMessage());
+        }
     }
 
     /**
-     * 컨테이너 상태 로깅
+     * 컨테이너 상태 로깅 - 개선된 버전
      */
     protected void logContainerStatus() {
         System.out.println("=== TestContainers Status ===");
-        System.out.println("Running: " + mysql.isRunning());
-        System.out.println("Container ID: " + mysql.getContainerId());
+        System.out.println("🔍 Running: " + mysql.isRunning());
+        System.out.println("🔍 Container ID: " + mysql.getContainerId());
 
         try {
-            System.out.println("JDBC URL: " + mysql.getJdbcUrl());
-            System.out.println("Mapped Port: " + mysql.getMappedPort(3306));
+            System.out.println("🔍 JDBC URL: " + mysql.getJdbcUrl());
+            System.out.println("🔍 Mapped Port: " + mysql.getMappedPort(3306));
+            System.out.println("🔍 Host Port: " + mysql.getHost() + ":" + mysql.getFirstMappedPort());
+
+            // 추가 진단 정보
+            System.out.println("🔍 Database Name: " + mysql.getDatabaseName());
+            System.out.println("🔍 Username: " + mysql.getUsername());
+            System.out.println("🔍 Container State: " + mysql.getContainerInfo().getState().getStatus());
+
         } catch (Exception e) {
-            System.out.println("Status Error: " + e.getMessage());
+            System.err.println("❌ Status Error: " + e.getMessage());
         }
 
         if (!mysql.isRunning()) {
@@ -156,23 +197,62 @@ public abstract class IntegrationTestBase {
                 System.out.println("=== Container Logs ===");
                 System.out.println(mysql.getLogs());
             } catch (Exception e) {
-                System.out.println("로그 조회 실패: " + e.getMessage());
+                System.err.println("❌ 로그 조회 실패: " + e.getMessage());
             }
         }
     }
 
     /**
-     * 테스트 실패 시 디버깅
+     * 테스트 실패 시 디버깅 - 개선된 버전
      */
     protected void debugTestFailure(String testName, Exception e) {
         System.err.println("❌ Test Failed: " + testName);
-        System.err.println("Error: " + e.getMessage());
-        System.err.println("Error Type: " + e.getClass().getSimpleName());
+        System.err.println("📍 Error: " + e.getMessage());
+        System.err.println("📍 Error Type: " + e.getClass().getSimpleName());
 
         logContainerStatus();
 
+        // 스택 트레이스의 핵심 부분만 출력
         if (e.getCause() != null) {
-            System.err.println("Root Cause: " + e.getCause().getMessage());
+            System.err.println("📍 Root Cause: " + e.getCause().getMessage());
+        }
+
+        // RestTemplate 상태 확인
+        if (restTemplate != null) {
+            System.out.println("🔍 RestTemplate URI: " + restTemplate.getRootUri());
+        } else {
+            System.err.println("❌ RestTemplate is null");
+        }
+
+        // Spring Boot 애플리케이션 상태 확인
+        try {
+            var healthResponse = restTemplate.getForEntity("/actuator/health", String.class);
+            System.out.println("🔍 App Health Status: " + healthResponse.getStatusCode());
+        } catch (Exception healthEx) {
+            System.err.println("❌ App Health Check Failed: " + healthEx.getMessage());
+        }
+    }
+
+    /**
+     * API 엔드포인트 존재 여부 확인
+     */
+    protected void checkApiEndpoints() {
+        System.out.println("=== API Endpoints Check ===");
+
+        String[] endpoints = {
+                "/actuator/health",
+                "/api/v1/products",
+                "/api/v1/coupons/available",
+                "/api/v1/orders"
+        };
+
+        for (String endpoint : endpoints) {
+            try {
+                var response = restTemplate.getForEntity(endpoint, String.class);
+                System.out.println("✅ " + endpoint + " -> " + response.getStatusCode());
+            } catch (Exception e) {
+                System.err.println("❌ " + endpoint + " -> " + e.getMessage());
+            }
         }
     }
 }
