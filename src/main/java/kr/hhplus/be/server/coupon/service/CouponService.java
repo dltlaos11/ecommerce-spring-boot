@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,46 +19,38 @@ import kr.hhplus.be.server.coupon.dto.IssuedCouponResponse;
 import kr.hhplus.be.server.coupon.dto.UserCouponResponse;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyIssuedException;
 import kr.hhplus.be.server.coupon.exception.CouponNotFoundException;
+import kr.hhplus.be.server.coupon.infrastructure.repository.CouponJpaRepository;
 import kr.hhplus.be.server.coupon.repository.CouponRepository;
 import kr.hhplus.be.server.coupon.repository.UserCouponRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 쿠폰 서비스
+ * 쿠폰 서비스 - 동시성 제어 강화
  * 
- * 설계 원칙:
- * - 단일 책임: 쿠폰 관련 비즈니스 로직만 처리
- * - 의존성 역전: Repository 인터페이스에만 의존
- * - 트랜잭션 관리로 데이터 일관성 보장
- * - STEP06에서 선착순 처리 및 동시성 제어 추가 예정
- * 
- * 책임:
- * - 쿠폰 발급/조회/검증
- * - 할인 금액 계산
- * - 중복 발급 방지
- * - DTO 변환
+ * 동시성 제어 전략:
+ * - 쿠폰 발급: 비관적 락 + 유니크 제약 이중 방어
+ * - 선착순 처리: SELECT FOR UPDATE
+ * - DataIntegrityViolationException 처리
  */
 @Slf4j
 @Service
-@Transactional(readOnly = true) // 기본적으로 읽기 전용 트랜잭션
+@Transactional(readOnly = true)
 public class CouponService {
 
         private final CouponRepository couponRepository;
+        private final CouponJpaRepository couponJpaRepository; // 직접 접근용
         private final UserCouponRepository userCouponRepository;
 
-        /**
-         * 생성자 주입 (스프링 권장 방식)
-         */
         public CouponService(CouponRepository couponRepository,
+                        CouponJpaRepository couponJpaRepository,
                         UserCouponRepository userCouponRepository) {
                 this.couponRepository = couponRepository;
+                this.couponJpaRepository = couponJpaRepository;
                 this.userCouponRepository = userCouponRepository;
         }
 
         /**
          * 발급 가능한 쿠폰 목록 조회
-         * 
-         * @return 현재 발급 가능한 쿠폰 목록
          */
         public List<AvailableCouponResponse> getAvailableCoupons() {
                 log.debug("🎫 발급 가능한 쿠폰 목록 조회 요청");
@@ -72,33 +65,105 @@ public class CouponService {
         }
 
         /**
-         * 쿠폰 발급
+         * 쿠폰 발급 - 비관적 락 + 유니크 제약 이중 방어
+         * 🔒 선착순 쿠폰 발급의 핵심 동시성 제어
          */
         @Transactional
         public IssuedCouponResponse issueCoupon(Long couponId, Long userId) {
-                log.info("쿠폰 발급: couponId = {}, userId = {}", couponId, userId);
+                log.info("🔒 동시성 제어 쿠폰 발급 시작: couponId = {}, userId = {}", couponId, userId);
 
-                Coupon coupon = couponRepository.findById(couponId)
-                                .orElseThrow(() -> {
-                                        log.error("쿠폰 발급 실패 - 쿠폰 없음: couponId = {}", couponId);
-                                        return new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND);
-                                });
+                try {
+                        // 1단계: 비관적 락으로 쿠폰 조회 (SELECT FOR UPDATE)
+                        Coupon coupon = couponJpaRepository.findByIdForUpdate(couponId)
+                                        .orElseThrow(() -> {
+                                                log.error("쿠폰 발급 실패 - 쿠폰 없음: couponId = {}", couponId);
+                                                return new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND);
+                                        });
 
-                userCouponRepository.findByUserIdAndCouponId(userId, couponId)
-                                .ifPresent(existingCoupon -> {
-                                        log.warn("쿠폰 발급 실패 - 중복 발급: userId = {}, couponId = {}", userId, couponId);
-                                        throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
-                                });
+                        log.debug("🔒 쿠폰 비관적 락 획득: {}", coupon.getName());
 
-                coupon.validateIssuable();
+                        // 2단계: 중복 발급 검증 (애플리케이션 레벨)
+                        boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
+                                        .isPresent();
 
-                coupon.issue();
-                Coupon savedCoupon = couponRepository.save(coupon);
+                        if (alreadyIssued) {
+                                log.warn("쿠폰 발급 실패 - 중복 발급: userId = {}, couponId = {}", userId, couponId);
+                                throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
+                        }
 
-                UserCoupon userCoupon = new UserCoupon(userId, couponId);
-                UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
+                        // 3단계: 쿠폰 발급 가능 여부 검증
+                        coupon.validateIssuable();
 
-                return convertToIssuedResponse(savedUserCoupon, savedCoupon);
+                        // 4단계: 쿠폰 발급 처리 (도메인 로직)
+                        coupon.issue();
+                        Coupon savedCoupon = couponRepository.save(coupon);
+
+                        // 5단계: 사용자 쿠폰 생성 (유니크 제약으로 중복 방지)
+                        UserCoupon userCoupon = new UserCoupon(userId, couponId);
+                        UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
+
+                        log.info("✅ 동시성 제어 쿠폰 발급 성공: userId = {}, couponId = {}, 남은수량 = {}",
+                                        userId, couponId, savedCoupon.getRemainingQuantity());
+
+                        return convertToIssuedResponse(savedUserCoupon, savedCoupon);
+
+                } catch (DataIntegrityViolationException e) {
+                        // 유니크 제약 위반 (DB 레벨 중복 방지)
+                        log.warn("🔒 유니크 제약 위반 - 동시 발급 시도: userId = {}, couponId = {}", userId, couponId);
+                        throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
+                }
+        }
+
+        /**
+         * 선착순 쿠폰 발급 (더 엄격한 동시성 제어)
+         */
+        @Transactional
+        public IssuedCouponResponse issueFirstComeCoupon(Long couponId, Long userId) {
+                log.info("🏃‍♂️ 선착순 쿠폰 발급: couponId = {}, userId = {}", couponId, userId);
+
+                try {
+                        // 비관적 락으로 쿠폰 조회
+                        Coupon coupon = couponJpaRepository.findByIdForUpdate(couponId)
+                                        .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
+
+                        // 소진 여부 우선 확인 (빠른 실패)
+                        if (coupon.isExhausted()) {
+                                log.warn("선착순 쿠폰 소진: couponId = {}, 발급량 = {}/{}",
+                                                couponId, coupon.getIssuedQuantity(), coupon.getTotalQuantity());
+                                throw new kr.hhplus.be.server.coupon.exception.CouponExhaustedException(
+                                                ErrorCode.COUPON_EXHAUSTED);
+                        }
+
+                        // 만료 여부 확인
+                        if (coupon.isExpired()) {
+                                log.warn("선착순 쿠폰 만료: couponId = {}", couponId);
+                                throw new kr.hhplus.be.server.coupon.exception.CouponExpiredException(
+                                                ErrorCode.COUPON_EXPIRED);
+                        }
+
+                        // 중복 발급 검증
+                        if (userCouponRepository.findByUserIdAndCouponId(userId, couponId).isPresent()) {
+                                log.warn("선착순 쿠폰 중복 발급: userId = {}, couponId = {}", userId, couponId);
+                                throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
+                        }
+
+                        // 발급 처리
+                        coupon.issue();
+                        Coupon savedCoupon = couponRepository.save(coupon);
+
+                        // 사용자 쿠폰 생성
+                        UserCoupon userCoupon = new UserCoupon(userId, couponId);
+                        UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
+
+                        log.info("🎉 선착순 쿠폰 발급 성공: userId = {}, 순번 = {}/{}",
+                                        userId, savedCoupon.getIssuedQuantity(), savedCoupon.getTotalQuantity());
+
+                        return convertToIssuedResponse(savedUserCoupon, savedCoupon);
+
+                } catch (DataIntegrityViolationException e) {
+                        log.warn("🔒 DB 제약 위반 - 선착순 중복 발급: userId = {}, couponId = {}", userId, couponId);
+                        throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
+                }
         }
 
         /**
@@ -147,11 +212,6 @@ public class CouponService {
 
         /**
          * 쿠폰 사용 가능 여부 검증 및 할인 금액 계산
-         * 
-         * @param userId      사용자 ID
-         * @param couponId    쿠폰 ID
-         * @param orderAmount 주문 금액
-         * @return 쿠폰 검증 결과 및 할인 정보
          */
         public CouponValidationResponse validateAndCalculateDiscount(Long userId, Long couponId,
                         BigDecimal orderAmount) {
@@ -194,10 +254,14 @@ public class CouponService {
         }
 
         /**
-         * 쿠폰 사용 처리 (주문 시 호출)
+         * 쿠폰 사용 처리 - 동시성 안전
          */
         @Transactional
         public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount) {
+                log.info("🎫 쿠폰 사용 처리: userId = {}, couponId = {}, orderAmount = {}",
+                                userId, couponId, orderAmount);
+
+                // 사용자 쿠폰 조회
                 UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
                                 .orElseThrow(() -> {
                                         log.error("쿠폰 사용 실패 - 보유하지 않은 쿠폰: userId = {}, couponId = {}", userId,
@@ -205,22 +269,25 @@ public class CouponService {
                                         return new IllegalArgumentException("보유하지 않은 쿠폰입니다.");
                                 });
 
+                // 쿠폰 정보 조회
                 Coupon coupon = couponRepository.findById(couponId)
                                 .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
 
+                // 할인 금액 계산
                 BigDecimal discountAmount = coupon.calculateDiscountAmount(orderAmount);
 
+                // 쿠폰 사용 처리
                 userCoupon.use();
                 userCouponRepository.save(userCoupon);
+
+                log.info("✅ 쿠폰 사용 완료: userId = {}, couponId = {}, 할인금액 = {}",
+                                userId, couponId, discountAmount);
 
                 return discountAmount;
         }
 
         /**
          * 특정 쿠폰 조회
-         * 
-         * @param couponId 쿠폰 ID
-         * @return 쿠폰 정보
          */
         public AvailableCouponResponse getCoupon(Long couponId) {
                 log.debug("🔍 쿠폰 조회 요청: couponId = {}", couponId);
@@ -238,15 +305,6 @@ public class CouponService {
 
         /**
          * 쿠폰 생성 (관리자 기능)
-         * 
-         * @param name               쿠폰명
-         * @param discountType       할인 타입
-         * @param discountValue      할인 값
-         * @param totalQuantity      총 수량
-         * @param maxDiscountAmount  최대 할인 금액
-         * @param minimumOrderAmount 최소 주문 금액
-         * @param expiredAt          만료일
-         * @return 생성된 쿠폰 정보
          */
         @Transactional
         public AvailableCouponResponse createCoupon(String name, Coupon.DiscountType discountType,
@@ -265,13 +323,33 @@ public class CouponService {
         }
 
         /**
+         * 쿠폰 발급 통계 조회 (관리자용)
+         */
+        public Map<String, Object> getCouponStatistics(Long couponId) {
+                Coupon coupon = couponRepository.findById(couponId)
+                                .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
+
+                return Map.of(
+                                "couponId", coupon.getId(),
+                                "couponName", coupon.getName(),
+                                "totalQuantity", coupon.getTotalQuantity(),
+                                "issuedQuantity", coupon.getIssuedQuantity(),
+                                "remainingQuantity", coupon.getRemainingQuantity(),
+                                "issuanceRate", (double) coupon.getIssuedQuantity() / coupon.getTotalQuantity() * 100,
+                                "isExhausted", coupon.isExhausted(),
+                                "isExpired", coupon.isExpired());
+        }
+
+        // ==================== DTO 변환 메서드들 ====================
+
+        /**
          * Coupon을 AvailableCouponResponse DTO로 변환
          */
         private AvailableCouponResponse convertToAvailableResponse(Coupon coupon) {
                 return new AvailableCouponResponse(
                                 coupon.getId(),
                                 coupon.getName(),
-                                coupon.getDiscountType().name(), // getCode() 대신 name() 사용
+                                coupon.getDiscountType().name(),
                                 coupon.getDiscountValue(),
                                 coupon.getMaxDiscountAmount(),
                                 coupon.getMinimumOrderAmount(),
