@@ -58,3 +58,18 @@ logging:
     org.springframework.transaction: DEBUG
     org.hibernate.SQL: DEBUG # SQL 쿼리 로그
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE # 파라미터 로그
+
+---
+# 동시성 테스트 프로필
+spring:
+  config:
+    activate:
+      on-profile: concurrency-test
+
+  # 테스트용 로깅 설정
+  logging:
+    level:
+      kr.hhplus.be.server: INFO
+      org.hibernate.SQL: WARN
+      org.springframework.transaction: WARN
+      root: WARN
