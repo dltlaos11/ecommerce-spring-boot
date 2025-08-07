@@ -21,45 +21,29 @@ import kr.hhplus.be.server.product.repository.ProductRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 상품 서비스
+ * 상품 서비스 - 비관적 락 강화
  * 
- * ✨ 설계 원칙:
- * - 단일 책임: 상품 관련 비즈니스 로직만 처리
- * - 의존성 역전: ProductRepository 인터페이스에만 의존
- * - 트랜잭션 관리: @Transactional로 데이터 일관성 보장
- * 
- * 🎯 책임:
- * - 상품 조회 및 검색
- * - 재고 관리 (차감, 복구, 확인)
- * - 비즈니스 규칙 검증
- * - DTO 변환
+ * 동시성 제어 전략:
+ * - 재고 차감: SELECT FOR UPDATE (비관적 락)
+ * - 조회: 일반 조회
+ * - 복구: 일반 업데이트
  */
-@Slf4j // 로깅을 위한 Lombok 어노테이션
+@Slf4j
 @Service
-@Transactional(readOnly = true) // 기본적으로 읽기 전용 트랜잭션
+@Transactional(readOnly = true)
 public class ProductService {
 
     private final ProductRepository productRepository;
     private final OrderItemRepository orderItemRepository;
 
-    /**
-     * 생성자 주입 (스프링 권장 방식)
-     * 
-     * 🎯 장점:
-     * - final 키워드로 불변성 보장
-     * - 테스트 시 Mock 객체 주입 용이
-     * - 순환 의존성 컴파일 타임 감지
-     */
     public ProductService(ProductRepository productRepository,
             OrderItemRepository orderItemRepository) {
         this.productRepository = productRepository;
-        this.orderItemRepository = orderItemRepository; // 추가
+        this.orderItemRepository = orderItemRepository;
     }
 
     /**
      * 모든 상품 조회
-     * 
-     * @return 전체 상품 목록 (DTO 변환됨)
      */
     public List<ProductResponse> getAllProducts() {
         log.debug("📋 전체 상품 목록 조회 요청");
@@ -75,10 +59,6 @@ public class ProductService {
 
     /**
      * 특정 상품 조회
-     * 
-     * @param productId 조회할 상품 ID
-     * @return 상품 정보 DTO
-     * @throws ProductNotFoundException 상품을 찾을 수 없는 경우
      */
     public ProductResponse getProduct(Long productId) {
         log.debug("🔍 상품 조회 요청: ID = {}", productId);
@@ -96,9 +76,6 @@ public class ProductService {
 
     /**
      * 상품명으로 검색
-     * 
-     * @param name 검색할 상품명 (부분 일치)
-     * @return 검색된 상품 목록
      */
     public List<ProductResponse> searchProductsByName(String name) {
         log.debug("🔍 상품명 검색 요청: '{}'", name);
@@ -118,10 +95,6 @@ public class ProductService {
 
     /**
      * 가격 범위로 상품 검색
-     * 
-     * @param minPrice 최소 가격
-     * @param maxPrice 최대 가격
-     * @return 가격 범위에 해당하는 상품 목록
      */
     public List<ProductResponse> getProductsByPriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
         log.debug("💰 가격 범위 검색 요청: {} ~ {}", minPrice, maxPrice);
@@ -137,8 +110,6 @@ public class ProductService {
 
     /**
      * 재고가 있는 상품만 조회
-     * 
-     * @return 재고가 있는 상품 목록
      */
     public List<ProductResponse> getAvailableProducts() {
         log.debug("📦 재고 있는 상품 조회 요청");
@@ -154,15 +125,10 @@ public class ProductService {
 
     /**
      * 인기 상품 조회 (판매량 기준)
-     * 
-     * @param limit 조회할 상품 개수
-     * @param days  조회 기간 (최근 N일)
-     * @return 인기 상품 목록 (판매량 내림차순)
      */
     public List<PopularProductResponse> getPopularProducts(int limit, int days) {
         log.debug("📊 인기 상품 통계 생성: limit = {}, 기간 = {}일", limit, days);
 
-        // OrderItemRepository 의존성 주입 필요 (생성자에 추가)
         LocalDateTime startDate = LocalDateTime.now().minusDays(days);
 
         // 1. 기간 내 모든 주문 항목 조회
@@ -199,20 +165,18 @@ public class ProductService {
     }
 
     /**
-     * 상품별 판매 통계 계산 (private 헬퍼 메서드)
+     * 상품별 판매 통계 계산
      */
     private ProductSalesStats calculateProductSalesStats(List<OrderItem> items) {
         if (items.isEmpty()) {
             throw new IllegalArgumentException("주문 항목이 비어있습니다.");
         }
 
-        // 첫 번째 항목에서 상품 기본 정보 추출
         OrderItem firstItem = items.get(0);
         Long productId = firstItem.getProductId();
         String productName = firstItem.getProductName();
         BigDecimal productPrice = firstItem.getProductPrice();
 
-        // 총 판매 수량 및 금액 계산
         int totalQuantity = items.stream()
                 .mapToInt(OrderItem::getQuantity)
                 .sum();
@@ -226,10 +190,6 @@ public class ProductService {
 
     /**
      * 재고 확인
-     * 
-     * @param productId 상품 ID
-     * @param quantity  필요한 수량
-     * @return 재고 충분 여부
      */
     public boolean hasEnoughStock(Long productId, int quantity) {
         log.debug("📊 재고 확인 요청: 상품 ID = {}, 필요 수량 = {}", productId, quantity);
@@ -246,20 +206,14 @@ public class ProductService {
     }
 
     /**
-     * 재고 차감 (주문 시 호출)
-     * 
-     * 🔒 동시성 고려사항:
-     * - findByIdForUpdate로 비관적 락 적용
-     * - 여러 사용자가 동시에 주문해도 정확한 재고 차감 보장
-     * 
-     * @param productId 상품 ID
-     * @param quantity  차감할 수량
+     * 재고 차감 - 비관적 락 강화
+     * 🔒 SELECT FOR UPDATE로 동시 주문 시 정확한 재고 차감 보장
      */
-    @Transactional // 쓰기 작업이므로 readOnly=false
+    @Transactional
     public void reduceStock(Long productId, int quantity) {
-        log.debug("📉 재고 차감 요청: 상품 ID = {}, 차감 수량 = {}", productId, quantity);
+        log.info("🔒 비관적 락 재고 차감 시작: 상품 ID = {}, 차감 수량 = {}", productId, quantity);
 
-        // 비관적 락으로 상품 조회 (동시성 제어)
+        // 비관적 락으로 상품 조회 (SELECT FOR UPDATE)
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> {
                     log.error("❌ 재고 차감 실패 - 상품 없음: ID = {}", productId);
@@ -274,15 +228,64 @@ public class ProductService {
         // 변경된 상품 저장
         productRepository.save(product);
 
-        log.info("✅ 재고 차감 완료: 상품 '{}', {} → {} (차감: {})",
+        log.info("✅ 비관적 락 재고 차감 완료: 상품 '{}', {} → {} (차감: {})",
                 product.getName(), beforeStock, product.getStockQuantity(), quantity);
     }
 
     /**
+     * 재고 차감 검증 (재고 부족 시 예외 발생)
+     */
+    @Transactional
+    public void reduceStockWithValidation(Long productId, int quantity) {
+        log.info("🔒 검증 포함 재고 차감: 상품 ID = {}, 수량 = {}", productId, quantity);
+
+        // 비관적 락으로 상품 조회
+        Product product = productRepository.findByIdForUpdate(productId)
+                .orElseThrow(() -> {
+                    log.error("❌ 상품을 찾을 수 없음: ID = {}", productId);
+                    return new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND);
+                });
+
+        // 재고 부족 검증
+        if (!product.hasEnoughStock(quantity)) {
+            log.warn("❌ 재고 부족: 상품 '{}', 요청 {}, 현재 {}",
+                    product.getName(), quantity, product.getStockQuantity());
+            throw new kr.hhplus.be.server.product.exception.InsufficientStockException(
+                    ErrorCode.INSUFFICIENT_STOCK,
+                    String.format("재고 부족: 상품 '%s', 요청 %d, 현재 %d",
+                            product.getName(), quantity, product.getStockQuantity()));
+        }
+
+        int beforeStock = product.getStockQuantity();
+        product.reduceStock(quantity);
+        productRepository.save(product);
+
+        log.info("✅ 검증 포함 재고 차감 완료: '{}', {} → {}",
+                product.getName(), beforeStock, product.getStockQuantity());
+    }
+
+    /**
+     * 다중 상품 재고 차감 - 데드락 방지를 위한 ID 정렬
+     */
+    @Transactional
+    public void reduceMultipleStocks(Map<Long, Integer> productQuantityMap) {
+        log.info("🔒 다중 상품 재고 차감 시작: {} 개 상품", productQuantityMap.size());
+
+        // 데드락 방지를 위해 상품 ID 순으로 정렬하여 처리
+        List<Long> sortedProductIds = productQuantityMap.keySet().stream()
+                .sorted()
+                .toList();
+
+        for (Long productId : sortedProductIds) {
+            int quantity = productQuantityMap.get(productId);
+            reduceStockWithValidation(productId, quantity);
+        }
+
+        log.info("✅ 다중 상품 재고 차감 완료");
+    }
+
+    /**
      * 재고 복구 (주문 취소, 결제 실패 시)
-     * 
-     * @param productId 상품 ID
-     * @param quantity  복구할 수량
      */
     @Transactional
     public void restoreStock(Long productId, int quantity) {
@@ -296,10 +299,7 @@ public class ProductService {
 
         int beforeStock = product.getStockQuantity();
 
-        // 도메인 객체의 재고 복구 로직 호출
         product.restoreStock(quantity);
-
-        // 변경된 상품 저장
         productRepository.save(product);
 
         log.info("✅ 재고 복구 완료: 상품 '{}', {} → {} (복구: {})",
@@ -308,11 +308,6 @@ public class ProductService {
 
     /**
      * 상품 생성 (관리자 기능)
-     * 
-     * @param name          상품명
-     * @param price         가격
-     * @param stockQuantity 초기 재고
-     * @return 생성된 상품 정보
      */
     @Transactional
     public ProductResponse createProduct(String name, BigDecimal price, Integer stockQuantity) {
@@ -328,11 +323,6 @@ public class ProductService {
 
     /**
      * 상품 정보 수정 (관리자 기능)
-     * 
-     * @param productId 수정할 상품 ID
-     * @param name      새 상품명
-     * @param price     새 가격
-     * @return 수정된 상품 정보
      */
     @Transactional
     public ProductResponse updateProduct(Long productId, String name, BigDecimal price) {
@@ -355,8 +345,6 @@ public class ProductService {
 
     /**
      * 상품 삭제 (관리자 기능)
-     * 
-     * @param productId 삭제할 상품 ID
      */
     @Transactional
     public void deleteProduct(Long productId) {
@@ -373,11 +361,6 @@ public class ProductService {
 
     /**
      * Domain 객체를 DTO로 변환
-     * 
-     * 🎯 DTO 변환 이유:
-     * - 외부에 도메인 객체 노출 방지
-     * - API 스펙 안정성 확보
-     * - 필요한 정보만 선별적 노출
      */
     private ProductResponse convertToResponse(Product product) {
         return new ProductResponse(
