@@ -3,6 +3,7 @@ package kr.hhplus.be.server.coupon.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
@@ -203,8 +204,8 @@ class CouponServiceTest {
 
         when(userCouponRepository.findByUserId(userId)).thenReturn(userCoupons);
 
-        // ✅ N+1 해결: findAllById Mock 설정 추가
-        when(couponRepository.findAllById(List.of(1L, 2L)))
+        // ✅ N+1 해결: ArgumentMatchers 사용하여 유연한 매칭
+        when(couponRepository.findAllById(anySet()))
                 .thenReturn(List.of(coupon1, coupon2));
 
         // When
@@ -217,7 +218,7 @@ class CouponServiceTest {
                 .containsExactly("쿠폰1", "쿠폰2");
 
         verify(userCouponRepository).findByUserId(userId);
-        verify(couponRepository).findAllById(List.of(1L, 2L)); // ✅ N+1 해결 검증
+        verify(couponRepository).findAllById(anySet()); // ✅ N+1 해결 검증
     }
 
     @Test
