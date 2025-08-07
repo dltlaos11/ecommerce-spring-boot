@@ -10,50 +10,49 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.MySQLContainer;
 
-import kr.hhplus.be.server.balance.application.BalanceUseCase;
+import kr.hhplus.be.server.balance.application.ChargeBalanceUseCase;
+import kr.hhplus.be.server.balance.application.GetBalanceUseCase;
 import kr.hhplus.be.server.balance.domain.UserBalance;
 import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
-import kr.hhplus.be.server.coupon.application.CouponUseCase;
-import kr.hhplus.be.server.order.application.OrderUseCase;
-import kr.hhplus.be.server.product.application.ProductUseCase;
+import kr.hhplus.be.server.coupon.application.GetCouponsUseCase;
+import kr.hhplus.be.server.order.application.CreateOrderUseCase;
+import kr.hhplus.be.server.order.application.GetOrdersUseCase;
+import kr.hhplus.be.server.product.application.GetProductsUseCase;
 import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 
 /**
- * 완성 검증 테스트 - 수정된 버전
+ * 완성 검증 테스트 - 수정된 버전 (UseCase 분리 반영)
  * 
  * 수정사항:
- * - TestContainers 설정 추가
- * - 트랜잭션 처리 개선
- * - 에러 처리 강화
+ * - BalanceUseCase → ChargeBalanceUseCase, GetBalanceUseCase 분리 반영
+ * - OrderUseCase → CreateOrderUseCase, GetOrdersUseCase 분리 반영
+ * - CouponUseCase → GetCouponsUseCase 참조 수정
  */
 @SpringBootTest
-// @Testcontainers
 @ActiveProfiles("test")
 @DisplayName("완성 검증 테스트")
 @Transactional
 class ApplicationVerificationTest {
 
-    // @Container
-    // @ServiceConnection
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
+    @Autowired
+    private ChargeBalanceUseCase chargeBalanceUseCase;
 
     @Autowired
-    private BalanceUseCase balanceUseCase;
+    private GetBalanceUseCase getBalanceUseCase;
 
     @Autowired
-    private ProductUseCase productUseCase;
+    private GetProductsUseCase getProductsUseCase;
 
     @Autowired
-    private OrderUseCase orderUseCase;
+    private CreateOrderUseCase createOrderUseCase;
 
     @Autowired
-    private CouponUseCase couponUseCase;
+    private GetOrdersUseCase getOrdersUseCase;
+
+    @Autowired
+    private GetCouponsUseCase getCouponsUseCase;
 
     @Autowired
     private UserBalanceRepository userBalanceRepository;
@@ -65,10 +64,12 @@ class ApplicationVerificationTest {
     @DisplayName("스프링 컨텍스트 로드 검증 - 모든 Bean이 정상적으로 주입된다")
     void 스프링컨텍스트_로드검증() {
         // Application Layer UseCase 주입 확인
-        assertThat(balanceUseCase).isNotNull();
-        assertThat(productUseCase).isNotNull();
-        assertThat(orderUseCase).isNotNull();
-        assertThat(couponUseCase).isNotNull();
+        assertThat(chargeBalanceUseCase).isNotNull();
+        assertThat(getBalanceUseCase).isNotNull();
+        assertThat(getProductsUseCase).isNotNull();
+        assertThat(createOrderUseCase).isNotNull();
+        assertThat(getOrdersUseCase).isNotNull();
+        assertThat(getCouponsUseCase).isNotNull();
 
         // Infrastructure Layer Repository 주입 확인
         assertThat(userBalanceRepository).isNotNull();
@@ -104,8 +105,8 @@ class ApplicationVerificationTest {
     @DisplayName("Application Layer 동작 검증 - UseCase가 정상 동작한다")
     void Application계층_동작검증() {
         // Given & When: UseCase 메서드 호출
-        var allProducts = productUseCase.getAllProducts();
-        var availableCoupons = couponUseCase.getAvailableCoupons();
+        var allProducts = getProductsUseCase.executeGetAll();
+        var availableCoupons = getCouponsUseCase.executeAvailableCoupons();
 
         // Then: 예외 없이 정상 실행되어야 함
         assertThat(allProducts).isNotNull();
@@ -178,7 +179,7 @@ class ApplicationVerificationTest {
         Long userId = System.currentTimeMillis() % 100000 + 777L; // 고유한 ID 생성
 
         // When: UseCase를 통한 트랜잭션 동작 확인
-        var response = balanceUseCase.chargeBalance(userId, new BigDecimal("25000"));
+        var response = chargeBalanceUseCase.execute(userId, new BigDecimal("25000"));
 
         // Then
         assertThat(response).isNotNull();
