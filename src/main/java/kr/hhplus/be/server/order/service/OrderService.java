@@ -3,8 +3,11 @@ package kr.hhplus.be.server.order.service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -126,18 +129,25 @@ public class OrderService {
     }
 
     /**
-     * 사용자별 주문 목록 조회
+     * 사용자별 주문 목록 조회 - N+1 문제 해결
      */
     public List<OrderResponse> getUserOrders(Long userId) {
-        log.debug("📋 사용자 주문 목록 조회: userId = {}", userId);
-
         List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
 
-        log.debug("✅ 사용자 주문 조회 완료: {}개", orders.size());
+        // N+1 문제 해결: 모든 주문 ID를 한 번에 조회
+        List<Long> orderIds = orders.stream()
+                .map(Order::getId)
+                .toList();
+
+        List<OrderItem> allOrderItems = orderItemRepository.findByOrderIdIn(orderIds);
+
+        // 주문별로 주문 항목들을 그룹핑
+        Map<Long, List<OrderItem>> orderItemsMap = allOrderItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
 
         return orders.stream()
                 .map(order -> {
-                    List<OrderItem> orderItems = orderItemRepository.findByOrderId(order.getId());
+                    List<OrderItem> orderItems = orderItemsMap.getOrDefault(order.getId(), Collections.emptyList());
                     return convertToOrderResponse(order, orderItems);
                 })
                 .toList();

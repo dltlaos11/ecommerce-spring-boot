@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Repository 구현체 분리
  * Entity-Domain 통합으로 변환 로직 없음
+ * N+1 문제 해결을 위한 배치 조회 메서드 추가
  */
 @Slf4j
 @Repository
@@ -38,37 +39,41 @@ public class CouponRepositoryJpaImpl implements CouponRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public List<Coupon> findAllById(Iterable<Long> ids) {
+        return jpaRepository.findAllById(ids);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<Coupon> findAvailableCoupons() {
         return jpaRepository.findAvailableCoupons(LocalDateTime.now());
     }
 
     @Override
     public Coupon save(Coupon coupon) {
-        log.debug("💾 쿠폰 저장: name = {}, type = {}, quantity = {}/{}",
+        log.debug("쿠폰 저장: name = {}, type = {}, quantity = {}/{}",
                 coupon.getName(), coupon.getDiscountType(),
                 coupon.getIssuedQuantity(), coupon.getTotalQuantity());
 
-        // 변환 로직 없이 직접 저장
         return jpaRepository.save(coupon);
     }
 
     @Override
     public void delete(Coupon coupon) {
         jpaRepository.delete(coupon);
-        log.debug("🗑️ 쿠폰 삭제: id = {}", coupon.getId());
+        log.debug("쿠폰 삭제: id = {}", coupon.getId());
     }
 
     @Override
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
-        log.debug("🗑️ 쿠폰 삭제: id = {}", id);
+        log.debug("쿠폰 삭제: id = {}", id);
     }
 
     @Override
     public Optional<Coupon> findByIdForUpdate(Long id) {
-        log.debug("🔒 쿠폰 비관적 락 조회: id = {}", id);
+        log.debug("쿠폰 비관적 락 조회: id = {}", id);
 
-        // SELECT FOR UPDATE로 선착순 쿠폰 발급 시 동시성 제어
         return jpaRepository.findByIdForUpdate(id);
     }
 }

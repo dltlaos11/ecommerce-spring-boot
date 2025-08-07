@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Repository 구현체 분리
  * Entity-Domain 통합으로 변환 로직 없음
+ * N+1 문제 해결을 위한 배치 조회 메서드 구현
  */
 @Slf4j
 @Repository
@@ -32,7 +33,6 @@ public class OrderItemRepositoryJpaImpl implements OrderItemRepository {
     @Override
     @Transactional(readOnly = true)
     public List<OrderItem> findByOrderId(Long orderId) {
-        // 연관관계 없이 FK로 직접 조회
         return jpaRepository.findByOrderId(orderId);
     }
 
@@ -43,41 +43,40 @@ public class OrderItemRepositoryJpaImpl implements OrderItemRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<OrderItem> findByOrderIdIn(List<Long> orderIds) {
+        return jpaRepository.findByOrderIdIn(orderIds);
+    }
+
+    @Override
     public OrderItem save(OrderItem orderItem) {
-        log.debug("💾 주문 항목 저장: orderId = {}, productId = {}, quantity = {}",
+        log.debug("주문 항목 저장: orderId = {}, productId = {}, quantity = {}",
                 orderItem.getOrderId(), orderItem.getProductId(), orderItem.getQuantity());
 
-        // 변환 로직 없이 직접 저장
         return jpaRepository.save(orderItem);
     }
 
     @Override
     public void delete(OrderItem orderItem) {
         jpaRepository.delete(orderItem);
-        log.debug("🗑️ 주문 항목 삭제: id = {}", orderItem.getId());
+        log.debug("주문 항목 삭제: id = {}", orderItem.getId());
     }
 
     @Override
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
-        log.debug("🗑️ 주문 항목 삭제: id = {}", id);
+        log.debug("주문 항목 삭제: id = {}", id);
     }
 
     @Override
     public void deleteByOrderId(Long orderId) {
         jpaRepository.deleteByOrderId(orderId);
-        log.debug("🗑️ 주문별 항목 삭제: orderId = {}", orderId);
+        log.debug("주문별 항목 삭제: orderId = {}", orderId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<OrderItem> findAll() {
         return jpaRepository.findAll();
-    }
-
-    // 인기 상품 통계를 위한 배치 조회 (N+1 해결)
-    @Transactional(readOnly = true)
-    public List<OrderItem> findByOrderIdIn(List<Long> orderIds) {
-        return jpaRepository.findByOrderIdIn(orderIds);
     }
 }
