@@ -10,18 +10,14 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import kr.hhplus.be.server.common.response.CommonResponse;
-import kr.hhplus.be.server.product.application.ProductUseCase;
+import kr.hhplus.be.server.product.application.GetProductsUseCase;
 import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Application Layer 적용
- * 변경사항:
- * - ProductService → ProductUseCase 의존성 변경
- * - HTTP 요청/응답 처리에만 집중
- * - 재고 확인 API 추가
+ * UseCase 패턴 최종 적용 - GetProductsUseCase 사용
  */
 @Slf4j
 @RestController
@@ -30,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ProductController {
 
-  private final ProductUseCase productUseCase;
+  private final GetProductsUseCase getProductsUseCase;
 
   /**
    * 상품 목록 조회 (필터링 지원)
@@ -43,22 +39,20 @@ public class ProductController {
       @Parameter(description = "최대 가격", example = "2000000") @RequestParam(required = false) BigDecimal maxPrice,
       @Parameter(description = "재고 있는 상품만 조회", example = "true") @RequestParam(required = false, defaultValue = "false") Boolean onlyAvailable) {
 
-    log.info("📋 상품 목록 조회 요청 - name: '{}', 가격범위: {} ~ {}, 재고필터: {}",
+    log.info("상품 목록 조회 요청 - name: '{}', 가격범위: {} ~ {}, 재고필터: {}",
         name, minPrice, maxPrice, onlyAvailable);
 
     List<ProductResponse> products;
 
     if (name != null && !name.trim().isEmpty()) {
-      products = productUseCase.searchProductsByName(name);
+      products = getProductsUseCase.executeSearch(name);
     } else if (minPrice != null && maxPrice != null) {
-      products = productUseCase.getProductsByPriceRange(minPrice, maxPrice);
+      products = getProductsUseCase.executeSearchByPrice(minPrice, maxPrice);
     } else if (onlyAvailable) {
-      products = productUseCase.getAvailableProducts();
+      products = getProductsUseCase.executeGetAvailable();
     } else {
-      products = productUseCase.getAllProducts();
+      products = getProductsUseCase.executeGetAll();
     }
-
-    log.info("✅ 상품 목록 조회 완료 - {}개 상품", products.size());
 
     return CommonResponse.success(products);
   }
@@ -71,17 +65,15 @@ public class ProductController {
   public CommonResponse<ProductResponse> getProduct(
       @Parameter(description = "상품 ID", example = "1", required = true) @PathVariable Long productId) {
 
-    log.info("🔍 상품 상세 조회 요청 - ID: {}", productId);
+    log.info("상품 상세 조회 요청 - ID: {}", productId);
 
-    ProductResponse product = productUseCase.getProduct(productId);
-
-    log.info("✅ 상품 상세 조회 완료 - ID: {}, 이름: '{}'", productId, product.name());
+    ProductResponse product = getProductsUseCase.executeGet(productId);
 
     return CommonResponse.success(product);
   }
 
   /**
-   * 재고 확인 API (주문 전 재고 체크용) - 🆕 새로 추가
+   * 재고 확인 API
    */
   @GetMapping("/{productId}/stock")
   @Operation(summary = "상품 재고 확인", description = "특정 상품의 재고가 충분한지 확인합니다.")
@@ -89,15 +81,13 @@ public class ProductController {
       @Parameter(description = "상품 ID", example = "1", required = true) @PathVariable Long productId,
       @Parameter(description = "확인할 수량", example = "3", required = true) @RequestParam int quantity) {
 
-    log.info("📊 재고 확인 요청 - 상품 ID: {}, 필요 수량: {}", productId, quantity);
+    log.info("재고 확인 요청 - 상품 ID: {}, 필요 수량: {}", productId, quantity);
 
-    ProductResponse product = productUseCase.getProduct(productId);
-    boolean available = productUseCase.hasEnoughStock(productId, quantity);
+    ProductResponse product = getProductsUseCase.executeGet(productId);
+    boolean available = getProductsUseCase.executeStockCheck(productId, quantity);
 
     StockCheckResponse response = new StockCheckResponse(
         productId, quantity, product.stockQuantity(), available);
-
-    log.info("✅ 재고 확인 완료 - 상품 ID: {}, 결과: {}", productId, available ? "충분" : "부족");
 
     return CommonResponse.success(response);
   }
@@ -111,7 +101,6 @@ public class ProductController {
       @Parameter(description = "조회할 상품 개수", example = "5") @RequestParam(defaultValue = "5") int limit,
       @Parameter(description = "조회 기간 (일)", example = "7") @RequestParam(defaultValue = "30") int days) {
 
-    // 파라미터 검증
     if (limit <= 0 || limit > 100) {
       throw new IllegalArgumentException("조회 개수는 1-100 사이여야 합니다.");
     }
@@ -119,17 +108,15 @@ public class ProductController {
       throw new IllegalArgumentException("조회 기간은 1-365일 사이여야 합니다.");
     }
 
-    log.info("📊 인기 상품 조회 요청 - limit: {}, 기간: {}일", limit, days);
+    log.info("인기 상품 조회 요청 - limit: {}, 기간: {}일", limit, days);
 
-    List<PopularProductResponse> popularProducts = productUseCase.getPopularProducts(limit, days);
-
-    log.info("✅ 인기 상품 조회 완료 - {}개 상품", popularProducts.size());
+    List<PopularProductResponse> popularProducts = getProductsUseCase.executeGetPopular(limit, days);
 
     return CommonResponse.success(popularProducts);
   }
 
   /**
-   * 재고 확인 응답 DTO - 🆕 추가
+   * 재고 확인 응답 DTO
    */
   @Schema(description = "재고 확인 응답")
   public static record StockCheckResponse(

@@ -10,16 +10,15 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import kr.hhplus.be.server.common.response.CommonResponse;
-import kr.hhplus.be.server.coupon.application.CouponUseCase; // UseCase 의존성 주입
+import kr.hhplus.be.server.coupon.application.GetCouponsUseCase;
+import kr.hhplus.be.server.coupon.application.IssueCouponUseCase;
+import kr.hhplus.be.server.coupon.application.ValidateCouponUseCase;
 import kr.hhplus.be.server.coupon.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Application Layer 적용
- * 변경사항:
- * - CouponService → CouponUseCase 의존성 변경
- * - HTTP 요청/응답 처리에만 집중
+ * UseCase 패턴 최종 적용 - 검증 로직 분리
  */
 @Slf4j
 @RestController
@@ -28,7 +27,9 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class CouponController {
 
-  private final CouponUseCase couponUseCase; // UseCase 의존성 주입
+  private final GetCouponsUseCase getCouponsUseCase;
+  private final IssueCouponUseCase issueCouponUseCase;
+  private final ValidateCouponUseCase validateCouponUseCase; // 분리된 검증 UseCase
 
   /**
    * 발급 가능한 쿠폰 목록 조회
@@ -36,11 +37,9 @@ public class CouponController {
   @GetMapping("/available")
   @Operation(summary = "발급 가능한 쿠폰 목록 조회", description = "현재 발급 가능한 모든 쿠폰의 목록을 조회합니다.")
   public CommonResponse<List<AvailableCouponResponse>> getAvailableCoupons() {
-    log.info("🎫 발급 가능한 쿠폰 목록 조회 요청");
+    log.info("발급 가능한 쿠폰 목록 조회 요청");
 
-    List<AvailableCouponResponse> coupons = couponUseCase.getAvailableCoupons();
-
-    log.info("✅ 발급 가능한 쿠폰 목록 조회 완료: {}개", coupons.size());
+    List<AvailableCouponResponse> coupons = getCouponsUseCase.executeAvailableCoupons();
 
     return CommonResponse.success(coupons);
   }
@@ -53,11 +52,9 @@ public class CouponController {
   public CommonResponse<AvailableCouponResponse> getCoupon(
       @Parameter(description = "쿠폰 ID", example = "1", required = true) @PathVariable Long couponId) {
 
-    log.info("🔍 쿠폰 상세 조회 요청: couponId = {}", couponId);
+    log.info("쿠폰 상세 조회 요청: couponId = {}", couponId);
 
-    AvailableCouponResponse coupon = couponUseCase.getCoupon(couponId);
-
-    log.info("✅ 쿠폰 상세 조회 완료: couponId = {}, 이름 = '{}'", couponId, coupon.name());
+    AvailableCouponResponse coupon = getCouponsUseCase.executeCouponQuery(couponId);
 
     return CommonResponse.success(coupon);
   }
@@ -72,11 +69,9 @@ public class CouponController {
       @Parameter(description = "쿠폰 ID", example = "1", required = true) @PathVariable Long couponId,
       @Valid @RequestBody IssueCouponRequest request) {
 
-    log.info("🎫 쿠폰 발급 요청: couponId = {}, userId = {}", couponId, request.userId());
+    log.info("쿠폰 발급 요청: couponId = {}, userId = {}", couponId, request.userId());
 
-    IssuedCouponResponse response = couponUseCase.issueCoupon(couponId, request.userId());
-
-    log.info("✅ 쿠폰 발급 완료: couponId = {}, userId = {}", couponId, request.userId());
+    IssuedCouponResponse response = issueCouponUseCase.execute(couponId, request.userId());
 
     return CommonResponse.success(response);
   }
@@ -90,31 +85,27 @@ public class CouponController {
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId,
       @Parameter(description = "사용 가능한 쿠폰만 조회", example = "false") @RequestParam(defaultValue = "false") Boolean onlyAvailable) {
 
-    log.info("📋 사용자 쿠폰 목록 조회 요청: userId = {}, onlyAvailable = {}", userId, onlyAvailable);
+    log.info("사용자 쿠폰 목록 조회 요청: userId = {}, onlyAvailable = {}", userId, onlyAvailable);
 
     List<UserCouponResponse> userCoupons = onlyAvailable
-        ? couponUseCase.getAvailableUserCoupons(userId)
-        : couponUseCase.getUserCoupons(userId);
-
-    log.info("✅ 사용자 쿠폰 목록 조회 완료: userId = {}, {}개 쿠폰", userId, userCoupons.size());
+        ? getCouponsUseCase.executeAvailableUserCoupons(userId)
+        : getCouponsUseCase.executeUserCoupons(userId);
 
     return CommonResponse.success(userCoupons);
   }
 
   /**
-   * 쿠폰 사용 가능 여부 검증 및 할인 금액 계산
+   * 쿠폰 사용 가능 여부 검증 및 할인 금액 계산 - 분리된 UseCase 사용
    */
   @PostMapping("/validate")
   @Operation(summary = "쿠폰 검증 및 할인 계산", description = "쿠폰 사용 가능 여부를 확인하고 할인 금액을 계산합니다.")
   public CommonResponse<CouponValidationResponse> validateCoupon(@Valid @RequestBody CouponValidationRequest request) {
-    log.info("🧮 쿠폰 검증 요청: userId = {}, couponId = {}, orderAmount = {}",
+    log.info("쿠폰 검증 요청: userId = {}, couponId = {}, orderAmount = {}",
         request.userId(), request.couponId(), request.orderAmount());
 
-    CouponValidationResponse response = couponUseCase.validateAndCalculateDiscount(
+    // 분리된 ValidateCouponUseCase 사용
+    CouponValidationResponse response = validateCouponUseCase.execute(
         request.userId(), request.couponId(), request.orderAmount());
-
-    log.info("✅ 쿠폰 검증 완료: usable = {}, discountAmount = {}",
-        response.usable(), response.discountAmount());
 
     return CommonResponse.success(response);
   }
