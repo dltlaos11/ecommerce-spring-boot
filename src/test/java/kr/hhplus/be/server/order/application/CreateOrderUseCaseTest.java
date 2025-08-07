@@ -30,16 +30,10 @@ import kr.hhplus.be.server.product.exception.InsufficientStockException;
 import kr.hhplus.be.server.product.service.ProductService;
 
 /**
- * CreateOrderUseCase 단위 테스트
- * 
- * 테스트 전략:
- * - 복잡한 주문 워크플로우의 각 단계별 검증
- * - 외부 서비스들과의 상호작용 검증
- * - 예외 상황별 시나리오 테스트
- * - 트랜잭션 경계 및 롤백 시나리오
+ * CreateOrderUseCase 단위 테스트 - 최종 수정 버전
  * 
  * 핵심 비즈니스 워크플로우:
- * 1. 재고 검증 → 2. 쿠폰 할인 계산 → 3. 잔액 결제 → 4. 재고 차감 → 5. 쿠폰 사용 → 6. 주문 생성
+ * 1. 재고 검증 → 2. 총 금액 계산 → 3. 쿠폰 할인 → 4. 잔액 결제 → 5. 재고 차감 → 6. 쿠폰 사용 → 7. 주문 생성
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CreateOrderUseCase 단위 테스트")
@@ -71,7 +65,7 @@ class CreateOrderUseCaseTest {
                 null // 쿠폰 없음
         );
 
-        // 상품 조회 Mock
+        // 상품 조회 Mock - 여러 번 호출될 수 있음
         ProductResponse product = new ProductResponse(1L, "테스트 노트북",
                 new BigDecimal("50000"), 10, LocalDateTime.now());
         when(productService.getProduct(1L)).thenReturn(product);
@@ -100,8 +94,8 @@ class CreateOrderUseCaseTest {
         assertThat(response.totalAmount()).isEqualByComparingTo(new BigDecimal("100000"));
         assertThat(response.finalAmount()).isEqualByComparingTo(new BigDecimal("100000"));
 
-        // 워크플로우 검증
-        verify(productService).getProduct(1L);
+        // 워크플로우 검증 - 각 단계별 호출 확인
+        verify(productService, times(3)).getProduct(1L); // validateStock, calculateTotal, getProductInfoMap
         verify(productService).hasEnoughStock(1L, 2);
         verify(balanceService).hasEnoughBalance(userId, new BigDecimal("100000"));
         verify(balanceService).deductBalance(eq(userId), eq(new BigDecimal("100000")), anyString());
@@ -182,10 +176,10 @@ class CreateOrderUseCaseTest {
         assertThatThrownBy(() -> createOrderUseCase.execute(request))
                 .isInstanceOf(InsufficientStockException.class);
 
-        // 재고 검증만 호출되고 나머지는 호출되지 않아야 함
-        verify(productService).getProduct(1L);
+        // 재고 검증에서 실패하므로 나머지는 호출되지 않음
+        verify(productService).getProduct(1L); // validateProductStock에서 호출
         verify(productService).hasEnoughStock(1L, 5);
-        verifyNoInteractions(balanceService, couponService, orderService);
+        verifyNoMoreInteractions(productService, balanceService, couponService, orderService);
     }
 
     @Test
@@ -209,13 +203,13 @@ class CreateOrderUseCaseTest {
         assertThatThrownBy(() -> createOrderUseCase.execute(request))
                 .isInstanceOf(InsufficientBalanceException.class);
 
-        // 잔액 검증까지만 호출되고 실제 차감은 호출되지 않아야 함
-        verify(productService).getProduct(1L);
+        // 잔액 검증에서 실패하므로 실제 차감은 호출되지 않음
+        verify(productService, times(2)).getProduct(1L); // validateStock + calculateTotalAmount
         verify(productService).hasEnoughStock(1L, 2);
         verify(balanceService).hasEnoughBalance(userId, new BigDecimal("200000"));
-        verify(balanceService, never()).deductBalance(any(), any(), any());
-        verify(productService, never()).reduceStock(any(), any());
-        verifyNoInteractions(orderService);
+        verify(balanceService, never()).deductBalance(any(Long.class), any(BigDecimal.class), anyString());
+        verify(productService, never()).reduceStock(anyLong(), anyInt());
+        verifyNoMoreInteractions(orderService);
     }
 
     @Test
@@ -246,11 +240,11 @@ class CreateOrderUseCaseTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("쿠폰을 사용할 수 없습니다: 최소 주문 금액을 만족하지 않습니다");
 
-        // 쿠폰 검증까지만 호출되고 나머지는 호출되지 않아야 함
-        verify(productService).getProduct(1L);
+        // 쿠폰 검증에서 실패하므로 나머지는 호출되지 않음
+        verify(productService, times(2)).getProduct(1L); // validateStock + calculateTotalAmount
         verify(productService).hasEnoughStock(1L, 1);
         verify(couponService).validateAndCalculateDiscount(userId, couponId, new BigDecimal("50000"));
-        verifyNoInteractions(balanceService, orderService);
+        verifyNoMoreInteractions(balanceService, orderService);
     }
 
     @Test
@@ -292,9 +286,9 @@ class CreateOrderUseCaseTest {
         assertThat(response).isNotNull();
         assertThat(response.finalAmount()).isEqualByComparingTo(new BigDecimal("110000"));
 
-        // 모든 상품에 대해 검증되어야 함
-        verify(productService).getProduct(1L);
-        verify(productService).getProduct(2L);
+        // 모든 상품에 대해 검증 - 각 상품이 3번씩 호출됨 (validate, calculate, getMap)
+        verify(productService, times(3)).getProduct(1L);
+        verify(productService, times(3)).getProduct(2L);
         verify(productService).hasEnoughStock(1L, 1);
         verify(productService).hasEnoughStock(2L, 2);
         verify(productService).reduceStock(1L, 1);
@@ -386,11 +380,10 @@ class CreateOrderUseCaseTest {
         // When
         createOrderUseCase.execute(request);
 
-        // Then: 호출 순서 검증
+        // Then: 핵심 워크플로우 순서만 검증 (getProduct는 여러 곳에서 호출되므로 제외)
         var inOrder = inOrder(productService, balanceService, orderService);
 
         // 1. 재고 검증
-        inOrder.verify(productService).getProduct(1L);
         inOrder.verify(productService).hasEnoughStock(1L, 1);
 
         // 2. 잔액 검증 및 차감
@@ -402,6 +395,9 @@ class CreateOrderUseCaseTest {
 
         // 4. 주문 생성
         inOrder.verify(orderService).createOrderWithProductInfo(any(), any(), any(), any(), any());
+
+        // getProduct는 3번 호출됨 (validate, calculate, getMap)
+        verify(productService, times(3)).getProduct(1L);
     }
 
     // ==================== 테스트 헬퍼 메서드들 ====================
