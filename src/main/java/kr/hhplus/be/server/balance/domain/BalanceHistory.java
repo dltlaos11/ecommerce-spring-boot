@@ -52,24 +52,18 @@ public class BalanceHistory {
     private LocalDateTime createdAt;
 
     /**
-     * 거래 유형 enum
+     * 거래 유형 enum - code 필드 제거, Enum.name() 활용
      */
     public enum TransactionType {
-        CHARGE("CHARGE", "충전"),
-        PAYMENT("PAYMENT", "결제"),
-        REFUND("REFUND", "환불"),
-        ADJUSTMENT("ADJUSTMENT", "조정");
+        CHARGE("충전"),
+        PAYMENT("결제"),
+        REFUND("환불"),
+        ADJUSTMENT("조정");
 
-        private final String code;
         private final String description;
 
-        TransactionType(String code, String description) {
-            this.code = code;
+        TransactionType(String description) {
             this.description = description;
-        }
-
-        public String getCode() {
-            return code;
         }
 
         public String getDescription() {
@@ -161,17 +155,8 @@ public class BalanceHistory {
         return String.format("BalanceHistory{userId=%d, type=%s, amount=%s, balanceAfter=%s}",
                 userId, transactionType, amount, balanceAfter);
     }
-    // ======================== 테스트를 위한 생성자 및 setter ========================
 
-    // /**
-    // * 테스트 전용 기본 생성자
-    // *
-    // * @deprecated 테스트에서만 사용
-    // */
-    // @Deprecated
-    // public BalanceHistory() {
-    // // 테스트용 기본 생성자
-    // }
+    // ======================== 테스트를 위한 생성자 및 setter ========================
 
     /**
      * 테스트 전용 - ID 설정
