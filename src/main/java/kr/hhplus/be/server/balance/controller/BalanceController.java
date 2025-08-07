@@ -9,7 +9,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import kr.hhplus.be.server.balance.application.BalanceUseCase; // UseCase 의존성 주입
+import kr.hhplus.be.server.balance.application.ChargeBalanceUseCase;
+import kr.hhplus.be.server.balance.application.GetBalanceUseCase;
 import kr.hhplus.be.server.balance.dto.BalanceHistoryResponse;
 import kr.hhplus.be.server.balance.dto.BalanceResponse;
 import kr.hhplus.be.server.balance.dto.ChargeBalanceRequest;
@@ -19,10 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Application Layer 적용
- * 변경사항:
- * - BalanceService → BalanceUseCase 의존성 변경
- * - HTTP 요청/응답 처리에만 집중
+ * 분리된 UseCase 적용 - 각 API가 독립적인 UseCase 사용
  */
 @Slf4j
 @RestController
@@ -31,7 +29,8 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class BalanceController {
 
-  private final BalanceUseCase balanceUseCase; // UseCase 의존성 주입
+  private final GetBalanceUseCase getBalanceUseCase;
+  private final ChargeBalanceUseCase chargeBalanceUseCase;
 
   /**
    * 사용자 잔액 조회
@@ -41,11 +40,9 @@ public class BalanceController {
   public CommonResponse<BalanceResponse> getUserBalance(
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId) {
 
-    log.info("💰 사용자 잔액 조회 요청: userId = {}", userId);
+    log.info("잔액 조회 요청: userId = {}", userId);
 
-    BalanceResponse balance = balanceUseCase.getUserBalance(userId);
-
-    log.info("✅ 사용자 잔액 조회 완료: userId = {}, balance = {}", userId, balance.balance());
+    BalanceResponse balance = getBalanceUseCase.execute(userId);
 
     return CommonResponse.success(balance);
   }
@@ -60,12 +57,9 @@ public class BalanceController {
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId,
       @Valid @RequestBody ChargeBalanceRequest request) {
 
-    log.info("💳 잔액 충전 요청: userId = {}, amount = {}", userId, request.amount());
+    log.info("잔액 충전 요청: userId = {}, amount = {}", userId, request.amount());
 
-    ChargeBalanceResponse response = balanceUseCase.chargeBalance(userId, request.amount());
-
-    log.info("✅ 잔액 충전 완료: userId = {}, 충전 금액 = {}, 현재 잔액 = {}",
-        userId, response.chargedAmount(), response.currentBalance());
+    ChargeBalanceResponse response = chargeBalanceUseCase.execute(userId, request.amount());
 
     return CommonResponse.success(response);
   }
@@ -79,11 +73,9 @@ public class BalanceController {
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId,
       @Parameter(description = "조회할 이력 개수", example = "10") @RequestParam(defaultValue = "10") int limit) {
 
-    log.info("📋 잔액 이력 조회 요청: userId = {}, limit = {}", userId, limit);
+    log.info("잔액 이력 조회 요청: userId = {}, limit = {}", userId, limit);
 
-    List<BalanceHistoryResponse> histories = balanceUseCase.getBalanceHistories(userId, limit);
-
-    log.info("✅ 잔액 이력 조회 완료: userId = {}, {}개 이력", userId, histories.size());
+    List<BalanceHistoryResponse> histories = getBalanceUseCase.executeHistoryQuery(userId, limit);
 
     return CommonResponse.success(histories);
   }
