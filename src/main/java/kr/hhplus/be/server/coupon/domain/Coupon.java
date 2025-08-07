@@ -68,19 +68,13 @@ public class Coupon {
      * 할인 타입 enum
      */
     public enum DiscountType {
-        FIXED("FIXED", "정액 할인"),
-        PERCENTAGE("PERCENTAGE", "정률 할인");
+        FIXED("정액 할인"),
+        PERCENTAGE("정률 할인");
 
-        private final String code;
         private final String description;
 
-        DiscountType(String code, String description) {
-            this.code = code;
+        DiscountType(String description) {
             this.description = description;
-        }
-
-        public String getCode() {
-            return code;
         }
 
         public String getDescription() {
@@ -200,31 +194,14 @@ public class Coupon {
         return !isExpired() && !isExhausted();
     }
 
-    // JPA를 위한 setter
-
-    void setId(Long id) {
-        this.id = id;
-    }
-
-    void setIssuedQuantity(Integer issuedQuantity) {
-        this.issuedQuantity = issuedQuantity;
-    }
-
-    void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
     @Override
     public String toString() {
         return String.format("Coupon{id=%d, name='%s', type=%s, issued=%d/%d}",
                 id, name, discountType, issuedQuantity, totalQuantity);
     }
 
-    // ========== Coupon.java 추가 ==========
+    // ======================== 테스트 전용 메서드들만 유지 ========================
+
     /**
      * 테스트 전용 setter 메서드들
      * 
@@ -259,5 +236,4 @@ public class Coupon {
     public void setMinimumOrderAmountForTest(BigDecimal minimumOrderAmount) {
         this.minimumOrderAmount = minimumOrderAmount;
     }
-
 }
