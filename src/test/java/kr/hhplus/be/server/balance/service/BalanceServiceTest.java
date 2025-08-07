@@ -360,11 +360,9 @@ class BalanceServiceTest {
                 // Then
                 assertThat(histories).hasSize(2);
 
-                // 수정된 부분: enum의 getCode() 메서드 호출
-                assertThat(histories.get(0).transactionType()).isEqualTo(
-                                BalanceHistory.TransactionType.CHARGE.getCode());
-                assertThat(histories.get(1).transactionType()).isEqualTo(
-                                BalanceHistory.TransactionType.PAYMENT.getCode());
+                // 수정된 부분: enum의 name() 메서드 결과와 비교
+                assertThat(histories.get(0).transactionType()).isEqualTo("CHARGE");
+                assertThat(histories.get(1).transactionType()).isEqualTo("PAYMENT");
 
                 verify(balanceHistoryRepository).findRecentHistoriesByUserId(userId, limit);
         }
