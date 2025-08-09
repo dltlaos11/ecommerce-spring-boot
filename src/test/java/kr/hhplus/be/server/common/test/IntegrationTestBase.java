@@ -30,7 +30,6 @@ import jakarta.persistence.EntityManager;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @Testcontainers
-@Transactional
 @TestPropertySource(properties = {
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.sql.init.mode=never",
@@ -49,12 +48,14 @@ public abstract class IntegrationTestBase {
             .withCommand(
                     "--default-authentication-plugin=mysql_native_password",
                     "--character-set-server=utf8mb4",
-                    "--collation-server=utf8mb4_unicode_ci")
-            .withStartupTimeout(Duration.ofMinutes(3))
-            .withConnectTimeoutSeconds(180)
+                    "--collation-server=utf8mb4_unicode_ci",
+                    "--skip-ssl",
+                    "--disable-log-bin")
+            .withStartupTimeout(Duration.ofMinutes(5)) // 타임아웃 증가
+            .withConnectTimeoutSeconds(300)
             .withEnv("MYSQL_ROOT_PASSWORD", "root")
-            .withTmpFs(Map.of("/var/lib/mysql", "rw,noexec,nosuid,size=512m"))
-            .withReuse(false);
+            .withEnv("MYSQL_ROOT_HOST", "%")
+            .withReuse(true); // 재사용 활성화로 속도 향상
 
     @Autowired
     protected TestRestTemplate restTemplate;
@@ -73,18 +74,23 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.password", mysql::getPassword);
         registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
 
-        // HikariCP 연결 풀 안정성 설정
-        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "5");
+        // HikariCP 연결 풀 안정성 설정 - 테스트 환경에 최적화
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "3");
         registry.add("spring.datasource.hikari.minimum-idle", () -> "1");
-        registry.add("spring.datasource.hikari.connection-timeout", () -> "30000");
-        registry.add("spring.datasource.hikari.idle-timeout", () -> "300000");
-        registry.add("spring.datasource.hikari.max-lifetime", () -> "600000");
+        registry.add("spring.datasource.hikari.connection-timeout", () -> "60000"); // 60초로 증가
+        registry.add("spring.datasource.hikari.idle-timeout", () -> "600000");
+        registry.add("spring.datasource.hikari.max-lifetime", () -> "1200000");
+        registry.add("spring.datasource.hikari.validation-timeout", () -> "30000");
+        registry.add("spring.datasource.hikari.initialization-fail-timeout", () -> "60000");
+        registry.add("spring.datasource.hikari.connection-test-query", () -> "SELECT 1");
 
         // JPA/Hibernate 설정
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.jpa.show-sql", () -> "false"); // 성능을 위해 false
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.MySQLDialect");
         registry.add("spring.jpa.properties.hibernate.format_sql", () -> "false");
+        registry.add("spring.jpa.properties.hibernate.hbm2ddl.auto", () -> "create-drop");
+        registry.add("spring.sql.init.mode", () -> "never"); // 중복 초기화 방지
 
         // 개선된 로깅
         System.out.println("🔧 TestContainers Configuration Applied:");
@@ -97,19 +103,72 @@ public abstract class IntegrationTestBase {
     static void beforeAll() {
         System.out.println("🚀 Starting Integration Test Environment...");
 
-        if (!mysql.isRunning()) {
-            System.out.println("🔄 Starting MySQL container...");
-            mysql.start();
-        }
+        try {
+            if (!mysql.isRunning()) {
+                System.out.println("🔄 Starting MySQL container...");
+                mysql.start();
+                
+                // 컨테이너 완전 시작 대기
+                Thread.sleep(5000);
+                
+                // 연결 테스트
+                waitForDatabaseReady();
+            }
 
-        if (!mysql.isRunning()) {
-            throw new IllegalStateException("❌ MySQL 컨테이너 시작 실패!");
-        }
+            if (!mysql.isRunning()) {
+                throw new IllegalStateException("❌ MySQL 컨테이너 시작 실패!");
+            }
 
-        System.out.println("✅ MySQL Container Ready:");
-        System.out.println("   🔗 JDBC URL: " + mysql.getJdbcUrl());
-        System.out.println("   📦 Container ID: " + mysql.getContainerId());
-        System.out.println("   🚀 Startup Time: " + mysql.getStartupAttempts() + " attempts");
+            System.out.println("✅ MySQL Container Ready:");
+            System.out.println("   🔗 JDBC URL: " + mysql.getJdbcUrl());
+            System.out.println("   📦 Container ID: " + mysql.getContainerId());
+            System.out.println("   🚀 Startup Time: " + mysql.getStartupAttempts() + " attempts");
+            
+        } catch (Exception e) {
+            System.err.println("❌ MySQL 컨테이너 초기화 실패: " + e.getMessage());
+            throw new RuntimeException("TestContainer 초기화 실패", e);
+        }
+    }
+    
+    /**
+     * 데이터베이스 준비 상태 대기
+     */
+    private static void waitForDatabaseReady() {
+        System.out.println("🔍 Waiting for database to be ready...");
+        
+        int maxAttempts = 30;
+        int attempt = 0;
+        
+        while (attempt < maxAttempts) {
+            try {
+                attempt++;
+                
+                // 간단한 연결 테스트
+                String jdbcUrl = mysql.getJdbcUrl();
+                System.out.println("🔗 Testing connection attempt " + attempt + ": " + jdbcUrl);
+                
+                // 컨테이너가 완전히 준비될 때까지 대기
+                if (mysql.isRunning()) {
+                    Thread.sleep(2000); // 2초 추가 대기
+                    System.out.println("✅ Database ready!");
+                    return;
+                }
+                
+                Thread.sleep(2000);
+                
+            } catch (Exception e) {
+                System.out.println("⏳ Database not ready yet, attempt " + attempt + "/" + maxAttempts);
+                if (attempt >= maxAttempts) {
+                    throw new RuntimeException("Database failed to be ready after " + maxAttempts + " attempts", e);
+                }
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while waiting for database", ie);
+                }
+            }
+        }
     }
 
     @BeforeEach
