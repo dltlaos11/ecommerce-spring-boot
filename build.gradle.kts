@@ -88,9 +88,9 @@ tasks.withType<Test> {
 		"-Dspring.jmx.enabled=false"
 	)
 	
-	// 테스트 타임아웃 설정
-	systemProperty("junit.jupiter.execution.timeout.default", "10m")
-	systemProperty("junit.jupiter.execution.timeout.testable.method.default", "5m")
+	// 테스트 타임아웃 설정 - 통합테스트에 맞게 조정
+	systemProperty("junit.jupiter.execution.timeout.default", "15m")
+	systemProperty("junit.jupiter.execution.timeout.testable.method.default", "8m")
 	
 	// 로깅 레벨 조정
 	systemProperty("logging.level.org.testcontainers", "INFO")

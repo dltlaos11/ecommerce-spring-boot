@@ -3,14 +3,15 @@ package kr.hhplus.be.server.product.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.util.List;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.common.response.CommonResponse;
 import kr.hhplus.be.server.common.test.IntegrationTestBase;
@@ -26,16 +27,19 @@ import kr.hhplus.be.server.product.repository.ProductRepository;
  * - 실제 비즈니스 플로우 검증
  */
 @DisplayName("상품 관리 통합 테스트 - 개선 버전")
-@Transactional
 class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
 
     @Autowired
     private ProductRepository productRepository;
 
+    // 테스트 시작 시 생성된 상품들을 추적
+    private List<Long> createdProductIds = new java.util.ArrayList<>();
+
     @BeforeEach
     void setUp() {
         try {
             verifyTestEnvironment();
+            createdProductIds.clear();
             System.out.println("🧪 Product Integration Test Setup Completed");
         } catch (Exception e) {
             debugTestFailure("setUp", e);
@@ -43,9 +47,23 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
         }
     }
 
+    @AfterEach
+    void tearDown() {
+        // 테스트에서 생성한 상품들 정리
+        try {
+            for (Long productId : createdProductIds) {
+                productRepository.findById(productId).ifPresent(productRepository::delete);
+            }
+            createdProductIds.clear();
+            System.out.println("🧹 Test cleanup completed");
+        } catch (Exception e) {
+            System.err.println("⚠️ Cleanup failed: " + e.getMessage());
+        }
+    }
+
     @Test
-    @DisplayName("전체 상품 조회 통합 테스트 - 실제 API 호출")
-    void 전체상품조회_통합테스트() {
+    @DisplayName("사용자가 현재 판매 중인 모든 상품을 볼 수 있다")
+    void 사용자가_현재_판매_중인_모든_상품을_볼_수_있다() {
         try {
             // Given: 기존 상품 개수 확인 (DataLoader 초기 데이터 고려)
             int initialCount = productRepository.findAll().size();
@@ -54,7 +72,8 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
             // 테스트용 고유 상품 추가
             String uniqueName = generateUniqueProductName("통합테스트상품");
             Product testProduct = new Product(uniqueName, new BigDecimal("100000"), 10);
-            productRepository.save(testProduct);
+            Product savedProduct = productRepository.save(testProduct);
+            createdProductIds.add(savedProduct.getId());
             flushAndClear(); // 즉시 DB 반영
 
             // When: 전체 상품 조회 API 호출
@@ -79,13 +98,14 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("특정 상품 조회 통합 테스트 - ID로 조회")
-    void 특정상품조회_통합테스트() {
+    @DisplayName("사용자가 관심 있는 상품의 상세 정보를 볼 수 있다")
+    void 사용자가_관심_있는_상품의_상세_정보를_볼_수_있다() {
         try {
             // Given: 고유한 테스트 상품 생성
             String uniqueName = generateUniqueProductName("특정조회테스트상품");
             Product testProduct = new Product(uniqueName, new BigDecimal("150000"), 5);
             Product savedProduct = productRepository.save(testProduct);
+            createdProductIds.add(savedProduct.getId());
             flushAndClear();
 
             System.out.println("🏷️ 테스트 상품 ID: " + savedProduct.getId());
@@ -113,8 +133,8 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("존재하지 않는 상품 조회 시 404 에러 검증")
-    void 존재하지않는상품조회_404에러() {
+    @DisplayName("존재하지 않는 상품을 조회하려고 하면 실패한다")
+    void 존재하지_않는_상품을_조회하려고_하면_실패한다() {
         try {
             // Given: 확실히 존재하지 않는 ID
             Long nonExistentId = 999999999L;
@@ -138,8 +158,8 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("상품명 검색 통합 테스트 - 쿼리 파라미터 사용")
-    void 상품명검색_통합테스트() {
+    @DisplayName("사용자가 원하는 상품명으로 검색하여 찾을 수 있다")
+    void 사용자가_원하는_상품명으로_검색하여_찾을_수_있다() {
         try {
             // Given: 고유한 키워드로 여러 상품 생성
             String uniqueKeyword = "SEARCH_" + System.currentTimeMillis();
@@ -148,9 +168,12 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
             Product product2 = new Product(uniqueKeyword + "_키보드", new BigDecimal("100000"), 10);
             Product product3 = new Product("일반마우스", new BigDecimal("50000"), 15);
 
-            productRepository.save(product1);
-            productRepository.save(product2);
-            productRepository.save(product3);
+            Product saved1 = productRepository.save(product1);
+            Product saved2 = productRepository.save(product2);
+            Product saved3 = productRepository.save(product3);
+            createdProductIds.add(saved1.getId());
+            createdProductIds.add(saved2.getId());
+            createdProductIds.add(saved3.getId());
             flushAndClear();
 
             // When: 고유 키워드로 검색
@@ -175,13 +198,14 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("재고 확인 API 통합 테스트 - 쿼리 파라미터 검증")
-    void 재고확인API_통합테스트() {
+    @DisplayName("사용자가 상품을 주문하기 전에 충분한 재고가 있는지 확인할 수 있다")
+    void 사용자가_상품을_주문하기_전에_충분한_재고가_있는지_확인할_수_있다() {
         try {
             // Given: 재고가 있는 테스트 상품 생성
             String uniqueName = generateUniqueProductName("재고확인상품");
             Product testProduct = new Product(uniqueName, new BigDecimal("75000"), 8);
             Product savedProduct = productRepository.save(testProduct);
+            createdProductIds.add(savedProduct.getId());
             flushAndClear();
 
             // When: 재고 확인 API 호출 (5개 수량 확인)
@@ -209,13 +233,14 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("재고 부족 상황 재고 확인 API")
-    void 재고부족_재고확인API() {
+    @DisplayName("사용자가 상품의 재고가 부족한 상황을 미리 알 수 있다")
+    void 사용자가_상품의_재고가_부족한_상황을_미리_알_수_있다() {
         try {
             // Given: 재고가 적은 테스트 상품 생성
             String uniqueName = generateUniqueProductName("재고부족상품");
             Product testProduct = new Product(uniqueName, new BigDecimal("50000"), 3);
             Product savedProduct = productRepository.save(testProduct);
+            createdProductIds.add(savedProduct.getId());
             flushAndClear();
 
             // When: 재고보다 많은 수량 확인 (5개 요청, 재고 3개)
@@ -242,8 +267,8 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("재고 있는 상품만 조회 통합 테스트")
-    void 재고있는상품조회_통합테스트() {
+    @DisplayName("사용자가 바로 구매 가능한 재고 있는 상품만 보고 싶어 한다")
+    void 사용자가_바로_구매_가능한_재고_있는_상품만_보고_싶어_한다() {
         try {
             // Given: 재고 있는 상품과 재고 없는 상품 생성
             int initialAvailableCount = productRepository.findByStockQuantityGreaterThan(0).size();
@@ -252,8 +277,10 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
             Product availableProduct = new Product(baseName + "_재고있음", new BigDecimal("100000"), 5);
             Product outOfStockProduct = new Product(baseName + "_재고없음", new BigDecimal("200000"), 0);
 
-            productRepository.save(availableProduct);
-            productRepository.save(outOfStockProduct);
+            Product savedAvailable = productRepository.save(availableProduct);
+            Product savedOutOfStock = productRepository.save(outOfStockProduct);
+            createdProductIds.add(savedAvailable.getId());
+            createdProductIds.add(savedOutOfStock.getId());
             flushAndClear();
 
             // When: 재고 있는 상품만 조회
@@ -278,13 +305,14 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("인기 상품 조회 통합 테스트 - 주문 데이터 없어도 정상 동작")
-    void 인기상품조회_통합테스트() {
+    @DisplayName("사용자가 현재 인기가 많은 인기 상품들을 보고 싶어 한다")
+    void 사용자가_현재_인기가_많은_인기_상품들을_보고_싶어_한다() {
         try {
             // Given: 상품은 있지만 주문 데이터는 없는 상황
             String uniqueName = generateUniqueProductName("인기상품테스트");
             Product testProduct = new Product(uniqueName, new BigDecimal("200000"), 10);
-            productRepository.save(testProduct);
+            Product savedProduct = productRepository.save(testProduct);
+            createdProductIds.add(savedProduct.getId());
             flushAndClear();
 
             // When: 인기 상품 조회 API 호출
@@ -305,8 +333,8 @@ class ImprovedProductControllerIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("잘못된 파라미터 검증 - 400 에러")
-    void 잘못된파라미터_400에러() {
+    @DisplayName("잘못된 요청으로 상품을 조회하려고 하면 실패한다")
+    void 잘못된_요청으로_상품을_조회하려고_하면_실패한다() {
         try {
             // When: 잘못된 파라미터로 인기 상품 조회
             ResponseEntity<CommonResponse> response = restTemplate.getForEntity(
