@@ -28,25 +28,7 @@ import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.service.ProductService;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 주문 서비스
- * 
- * 설계 원칙:
- * - 단일 책임: 주문 관련 기본 CRUD만 처리
- * - 복합 비즈니스 로직은 OrderFacade에서 처리
- * - 의존성 역전: Repository 인터페이스에만 의존
- * 
- * 수정사항:
- * - ProductService 의존성 추가로 실제 상품 정보 조회
- * - Mock 데이터 제거하고 실제 데이터 사용
- * - 주문 항목 생성 시 실제 상품 정보 활용
- * 
- * 책임:
- * - 주문 생성/조회/상태 변경
- * - 주문 항목 관리 (실제 상품 정보 연동)
- * - 결제 정보 관리
- * - DTO 변환
- */
+// 주문 기본 CRUD 서비스
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -55,28 +37,18 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final PaymentRepository paymentRepository;
-    private final ProductService productService; // 🆕 ProductService 추가
+    private final ProductService productService;
 
     public OrderService(OrderRepository orderRepository,
             OrderItemRepository orderItemRepository,
             PaymentRepository paymentRepository,
-            ProductService productService) { // 🆕 생성자에 ProductService 추가
+            ProductService productService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
         this.paymentRepository = paymentRepository;
         this.productService = productService;
     }
 
-    /**
-     * 주문 생성 (상품 정보 포함) - Facade에서 호출
-     * 
-     * @param request        주문 생성 요청
-     * @param totalAmount    총 주문 금액
-     * @param discountAmount 할인 금액
-     * @param finalAmount    최종 결제 금액
-     * @param productInfoMap 미리 조회된 상품 정보 맵
-     * @return 생성된 주문 정보
-     */
     @Transactional
     public OrderResponse createOrderWithProductInfo(CreateOrderRequest request, BigDecimal totalAmount,
             BigDecimal discountAmount, BigDecimal finalAmount, java.util.Map<Long, ProductResponse> productInfoMap) {

@@ -64,7 +64,7 @@ public class Product {
         if (!hasEnoughStock(quantity)) {
             throw new InsufficientStockException(
                     ErrorCode.INSUFFICIENT_STOCK,
-                    String.format("재고 부족: 요청 수량 %d, 현재 재고 %d", quantity, this.stockQuantity));
+                    "재고 부족: 요청 수량 " + quantity + ", 현재 재고 " + this.stockQuantity);
         }
 
         this.stockQuantity -= quantity;

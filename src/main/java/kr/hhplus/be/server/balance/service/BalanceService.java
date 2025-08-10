@@ -20,13 +20,7 @@ import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 잔액 서비스 - 낙관적 락 구현
- * 
- * 동시성 제어 전략:
- * - 충전: 낙관적 락 + 재시도 (@Retryable)
- * - 차감: 비관적 락 (필요시 사용)
- */
+// 낙관적 락 기반 잔액 관리
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -44,9 +38,6 @@ public class BalanceService {
                 this.balanceHistoryRepository = balanceHistoryRepository;
         }
 
-        /**
-         * 사용자 잔액 조회
-         */
         public BalanceResponse getUserBalance(Long userId) {
                 UserBalance userBalance = userBalanceRepository.findByUserId(userId)
                                 .orElseGet(() -> createNewUserBalance(userId));
@@ -54,13 +45,8 @@ public class BalanceService {
                 return convertToBalanceResponse(userBalance);
         }
 
-        /**
-         * 잔액 충전 - 낙관적 락 + 수동 재시도
-         * 🔒 OptimisticLockingFailureException 발생 시 최대 3회 재시도
-         */
         @Transactional
         public ChargeBalanceResponse chargeBalance(Long userId, BigDecimal amount) {
-                log.info("🔒 낙관적 락 잔액 충전 시작: userId = {}, amount = {}", userId, amount);
 
                 int maxAttempts = 3;
                 int attempt = 0;
@@ -69,35 +55,25 @@ public class BalanceService {
                         try {
                                 attempt++;
 
-                                // 낙관적 락으로 조회
                                 UserBalance userBalance = userBalanceJpaRepository
                                                 .findByUserIdWithOptimisticLock(userId)
                                                 .orElseGet(() -> createNewUserBalance(userId));
 
                                 BigDecimal previousBalance = userBalance.getBalance();
-
-                                // 도메인 로직 실행
                                 userBalance.charge(amount);
 
                                 String transactionId = generateTransactionId("CHARGE");
-
-                                // 저장 (버전 체크)
                                 UserBalance savedBalance = userBalanceRepository.save(userBalance);
 
-                                // 이력 저장
                                 BalanceHistory history = BalanceHistory.createChargeHistory(
                                                 userId, amount, savedBalance.getBalance(), transactionId);
                                 balanceHistoryRepository.save(history);
-
-                                log.info("✅ 낙관적 락 충전 성공 ({}회 시도): userId = {}, {} → {}",
-                                                attempt, userId, previousBalance, savedBalance.getBalance());
 
                                 return new ChargeBalanceResponse(
                                                 userId, previousBalance, amount, savedBalance.getBalance(),
                                                 transactionId);
 
                         } catch (OptimisticLockingFailureException e) {
-                                log.warn("⚠️ 낙관적 락 충돌 발생 - 재시도 {}/{}: userId = {}", attempt, maxAttempts, userId);
 
                                 if (attempt >= maxAttempts) {
                                         log.error("❌ 최대 재시도 횟수 초과: userId = {}", userId);

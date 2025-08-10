@@ -26,22 +26,8 @@ import kr.hhplus.be.server.balance.exception.InvalidChargeAmountException;
 import kr.hhplus.be.server.balance.repository.BalanceHistoryRepository;
 import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
 
-/**
- * BalanceService 단위 테스트
- * 
- * 테스트 전략:
- * - Mock을 활용한 외부 의존성 격리
- * - 비즈니스 규칙 검증 (충전 한도, 잔액 부족 등)
- * - 기본 CRUD 기능 검증
- * - STEP06에서 동시성 테스트 추가 예정
- * 
- * 테스트 범위:
- * - 잔액 조회/충전/차감
- * - 도메인 로직 검증
- * - DTO 변환 로직
- */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("BalanceService 단위 테스트 (STEP05)")
+@DisplayName("BalanceService 단위 테스트")
 class BalanceServiceTest {
 
         @Mock
