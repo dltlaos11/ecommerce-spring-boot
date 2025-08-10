@@ -24,14 +24,7 @@ import kr.hhplus.be.server.coupon.repository.CouponRepository;
 import kr.hhplus.be.server.coupon.repository.UserCouponRepository;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 쿠폰 서비스 - 동시성 제어 강화
- * 
- * 동시성 제어 전략:
- * - 쿠폰 발급: 비관적 락 + 유니크 제약 이중 방어
- * - 선착순 처리: SELECT FOR UPDATE
- * - DataIntegrityViolationException 처리
- */
+// 동시성 제어: 비관적 락 + 유니크 제약 이중 방어
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -49,67 +42,37 @@ public class CouponService {
                 this.userCouponRepository = userCouponRepository;
         }
 
-        /**
-         * 발급 가능한 쿠폰 목록 조회
-         */
         public List<AvailableCouponResponse> getAvailableCoupons() {
-                log.debug("🎫 발급 가능한 쿠폰 목록 조회 요청");
-
                 List<Coupon> availableCoupons = couponRepository.findAvailableCoupons();
-
-                log.debug("✅ 발급 가능한 쿠폰 조회 완료: {}개", availableCoupons.size());
-
                 return availableCoupons.stream()
                                 .map(this::convertToAvailableResponse)
                                 .toList();
         }
 
-        /**
-         * 쿠폰 발급 - 비관적 락 + 유니크 제약 이중 방어
-         * 🔒 선착순 쿠폰 발급의 핵심 동시성 제어
-         */
+        // 이중 방어 전략: 비관적 락 + 유니크 제약
         @Transactional
         public IssuedCouponResponse issueCoupon(Long couponId, Long userId) {
-                log.info("🔒 동시성 제어 쿠폰 발급 시작: couponId = {}, userId = {}", couponId, userId);
-
                 try {
-                        // 1단계: 비관적 락으로 쿠폰 조회 (SELECT FOR UPDATE)
                         Coupon coupon = couponJpaRepository.findByIdForUpdate(couponId)
-                                        .orElseThrow(() -> {
-                                                log.error("쿠폰 발급 실패 - 쿠폰 없음: couponId = {}", couponId);
-                                                return new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND);
-                                        });
+                                        .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
 
-                        log.debug("🔒 쿠폰 비관적 락 획득: {}", coupon.getName());
-
-                        // 2단계: 중복 발급 검증 (애플리케이션 레벨)
                         boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
                                         .isPresent();
 
                         if (alreadyIssued) {
-                                log.warn("쿠폰 발급 실패 - 중복 발급: userId = {}, couponId = {}", userId, couponId);
                                 throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
                         }
 
-                        // 3단계: 쿠폰 발급 가능 여부 검증
                         coupon.validateIssuable();
-
-                        // 4단계: 쿠폰 발급 처리 (도메인 로직)
                         coupon.issue();
                         Coupon savedCoupon = couponRepository.save(coupon);
 
-                        // 5단계: 사용자 쿠폰 생성 (유니크 제약으로 중복 방지)
                         UserCoupon userCoupon = new UserCoupon(userId, couponId);
                         UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
-
-                        log.info("✅ 동시성 제어 쿠폰 발급 성공: userId = {}, couponId = {}, 남은수량 = {}",
-                                        userId, couponId, savedCoupon.getRemainingQuantity());
 
                         return convertToIssuedResponse(savedUserCoupon, savedCoupon);
 
                 } catch (DataIntegrityViolationException e) {
-                        // 유니크 제약 위반 (DB 레벨 중복 방지)
-                        log.warn("🔒 유니크 제약 위반 - 동시 발급 시도: userId = {}, couponId = {}", userId, couponId);
                         throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
                 }
         }

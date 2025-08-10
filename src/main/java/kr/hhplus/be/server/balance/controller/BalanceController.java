@@ -19,9 +19,6 @@ import kr.hhplus.be.server.common.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 분리된 UseCase 적용 - 각 API가 독립적인 UseCase 사용
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/users/{userId}/balance")
@@ -32,24 +29,16 @@ public class BalanceController {
   private final GetBalanceUseCase getBalanceUseCase;
   private final ChargeBalanceUseCase chargeBalanceUseCase;
 
-  /**
-   * 사용자 잔액 조회
-   */
   @GetMapping
   @Operation(summary = "잔액 조회", description = "사용자의 현재 잔액을 조회합니다.")
   public CommonResponse<BalanceResponse> getUserBalance(
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId) {
-
-    log.info("잔액 조회 요청: userId = {}", userId);
 
     BalanceResponse balance = getBalanceUseCase.execute(userId);
 
     return CommonResponse.success(balance);
   }
 
-  /**
-   * 잔액 충전
-   */
   @PostMapping("/charge")
   @ResponseStatus(HttpStatus.CREATED)
   @Operation(summary = "잔액 충전", description = "사용자의 잔액을 충전합니다.")
@@ -57,7 +46,6 @@ public class BalanceController {
       @Parameter(description = "사용자 ID", example = "1", required = true) @PathVariable Long userId,
       @Valid @RequestBody ChargeBalanceRequest request) {
 
-    log.info("잔액 충전 요청: userId = {}, amount = {}", userId, request.amount());
 
     ChargeBalanceResponse response = chargeBalanceUseCase.execute(userId, request.amount());
 

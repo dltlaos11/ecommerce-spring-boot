@@ -16,9 +16,6 @@ import kr.hhplus.be.server.product.dto.ProductResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * UseCase 패턴 최종 적용 - GetProductsUseCase 사용
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/products")
@@ -28,9 +25,6 @@ public class ProductController {
 
   private final GetProductsUseCase getProductsUseCase;
 
-  /**
-   * 상품 목록 조회 (필터링 지원)
-   */
   @GetMapping
   @Operation(summary = "상품 목록 조회", description = "상품 목록을 조회합니다. 다양한 필터링 옵션을 제공합니다.")
   public CommonResponse<List<ProductResponse>> getProducts(
@@ -39,8 +33,6 @@ public class ProductController {
       @Parameter(description = "최대 가격", example = "2000000") @RequestParam(required = false) BigDecimal maxPrice,
       @Parameter(description = "재고 있는 상품만 조회", example = "true") @RequestParam(required = false, defaultValue = "false") Boolean onlyAvailable) {
 
-    log.info("상품 목록 조회 요청 - name: '{}', 가격범위: {} ~ {}, 재고필터: {}",
-        name, minPrice, maxPrice, onlyAvailable);
 
     List<ProductResponse> products;
 

@@ -99,7 +99,7 @@ public class BalanceHistory {
                 TransactionType.CHARGE,
                 amount,
                 balanceAfter,
-                String.format("잔액 충전: %s원", amount),
+                "잔액 충전: " + amount + "원",
                 transactionId);
     }
 
@@ -110,7 +110,7 @@ public class BalanceHistory {
                 TransactionType.PAYMENT,
                 amount,
                 balanceAfter,
-                String.format("주문 결제: %s원 (주문번호: %s)", amount, orderId),
+                "주문 결제: " + amount + "원 (주문번호: " + orderId + ")",
                 orderId);
     }
 
@@ -121,7 +121,7 @@ public class BalanceHistory {
                 TransactionType.REFUND,
                 amount,
                 balanceAfter,
-                String.format("주문 환불: %s원 (주문번호: %s)", amount, orderId),
+                "주문 환불: " + amount + "원 (주문번호: " + orderId + ")",
                 orderId);
     }
 
@@ -152,8 +152,8 @@ public class BalanceHistory {
 
     @Override
     public String toString() {
-        return String.format("BalanceHistory{userId=%d, type=%s, amount=%s, balanceAfter=%s}",
-                userId, transactionType, amount, balanceAfter);
+        return "BalanceHistory{userId=" + userId + ", type=" + transactionType + 
+                ", amount=" + amount + ", balanceAfter=" + balanceAfter + "}";
     }
 
     // ======================== 테스트를 위한 생성자 및 setter ========================

@@ -20,14 +20,7 @@ import kr.hhplus.be.server.product.exception.ProductNotFoundException;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * 상품 서비스 - 비관적 락 강화
- * 
- * 동시성 제어 전략:
- * - 재고 차감: SELECT FOR UPDATE (비관적 락)
- * - 조회: 일반 조회
- * - 복구: 일반 업데이트
- */
+// 비관적 락 기반 재고 관리
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -42,35 +35,16 @@ public class ProductService {
         this.orderItemRepository = orderItemRepository;
     }
 
-    /**
-     * 모든 상품 조회
-     */
     public List<ProductResponse> getAllProducts() {
-        log.debug("📋 전체 상품 목록 조회 요청");
-
         List<Product> products = productRepository.findAll();
-
-        log.debug("✅ 총 {}개 상품 조회 완료", products.size());
-
         return products.stream()
                 .map(this::convertToResponse)
                 .toList();
     }
 
-    /**
-     * 특정 상품 조회
-     */
     public ProductResponse getProduct(Long productId) {
-        log.debug("🔍 상품 조회 요청: ID = {}", productId);
-
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> {
-                    log.warn("❌ 상품을 찾을 수 없음: ID = {}", productId);
-                    return new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND);
-                });
-
-        log.debug("✅ 상품 조회 성공: {}", product.getName());
-
+                .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
         return convertToResponse(product);
     }
 

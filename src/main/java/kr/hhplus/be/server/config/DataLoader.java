@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Component
+@Order(1)
 @RequiredArgsConstructor
 public class DataLoader implements ApplicationRunner {
 
@@ -34,7 +36,6 @@ public class DataLoader implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) throws Exception {
-        log.info("🏪 MySQL 초기 데이터 로딩 시작...");
 
         // 기존 데이터가 있는지 확인
         if (productRepository.findAll().isEmpty()) {
@@ -51,7 +52,7 @@ public class DataLoader implements ApplicationRunner {
             log.info("🎫 기존 쿠폰 데이터 존재, 초기화 생략");
         }
 
-        log.info("🎉 MySQL 초기 데이터 로딩 완료!");
+        log.info("MySQL 초기 데이터 로딩 완료");
     }
 
     /**

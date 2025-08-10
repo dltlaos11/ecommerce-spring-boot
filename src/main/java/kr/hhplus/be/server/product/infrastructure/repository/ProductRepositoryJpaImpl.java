@@ -7,14 +7,11 @@ import java.util.Optional;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-import kr.hhplus.be.server.product.domain.Product; // ✅ 통합된 Entity+Domain
+import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * ✅ Entity-Domain 통합 버전 Infrastructure 구현체
- */
 @Slf4j
 @Repository
 @RequiredArgsConstructor
@@ -37,16 +34,12 @@ public class ProductRepositoryJpaImpl implements ProductRepository {
 
     @Override
     public Product save(Product product) {
-        log.debug("💾 상품 저장: id = {}, name = {}", product.getId(), product.getName());
-
-        // ✅ 변환 로직 없이 직접 저장
         return jpaRepository.save(product);
     }
 
     @Override
     public void delete(Product product) {
         jpaRepository.delete(product);
-        log.debug("🗑️ 상품 삭제: id = {}", product.getId());
     }
 
     @Override
