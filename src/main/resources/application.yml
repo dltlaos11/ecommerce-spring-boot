@@ -10,6 +10,14 @@ spring:
     username: application
     password: application
     driver-class-name: com.mysql.cj.jdbc.Driver
+    # HikariCP 커넥션 풀 설정 (적정 수준 유지)
+    hikari:
+      maximum-pool-size: 12      # CPU 코어 수 * 2 (일반적 권장사항, 기본값 10보다 약간 증가)
+      minimum-idle: 4            # 최소 유지 커넥션 수
+      connection-timeout: 20000  # 20초 연결 타임아웃
+      idle-timeout: 300000       # 5분 idle 타임아웃
+      max-lifetime: 1200000      # 20분 최대 생명주기
+      leak-detection-threshold: 60000  # 1분 리크 감지
 
   #  JPA 설정
   jpa:

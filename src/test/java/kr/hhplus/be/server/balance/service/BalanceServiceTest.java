@@ -16,13 +16,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 import kr.hhplus.be.server.balance.domain.BalanceHistory;
 import kr.hhplus.be.server.balance.domain.UserBalance;
 import kr.hhplus.be.server.balance.dto.BalanceResponse;
 import kr.hhplus.be.server.balance.dto.ChargeBalanceResponse;
+import kr.hhplus.be.server.balance.exception.BalanceConcurrencyException;
 import kr.hhplus.be.server.balance.exception.InsufficientBalanceException;
 import kr.hhplus.be.server.balance.exception.InvalidChargeAmountException;
+import kr.hhplus.be.server.balance.infrastructure.repository.UserBalanceJpaRepository;
 import kr.hhplus.be.server.balance.repository.BalanceHistoryRepository;
 import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
 
@@ -32,6 +35,9 @@ class BalanceServiceTest {
 
         @Mock
         private UserBalanceRepository userBalanceRepository;
+
+        @Mock
+        private UserBalanceJpaRepository userBalanceJpaRepository;
 
         @Mock
         private BalanceHistoryRepository balanceHistoryRepository;
@@ -94,7 +100,7 @@ class BalanceServiceTest {
                 UserBalance userBalance = createTestUserBalance(userId, "20000.00");
                 UserBalance savedBalance = createTestUserBalance(userId, "50000.00");
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
                 when(userBalanceRepository.save(any(UserBalance.class)))
                                 .thenReturn(savedBalance);
@@ -113,7 +119,7 @@ class BalanceServiceTest {
                 assertThat(response.transactionId()).isNotNull();
 
                 // Mock 호출 검증
-                verify(userBalanceRepository).findByUserId(userId);
+                verify(userBalanceJpaRepository).findByUserIdWithOptimisticLock(userId);
                 verify(userBalanceRepository).save(any(UserBalance.class));
                 verify(balanceHistoryRepository).save(any(BalanceHistory.class));
         }
@@ -126,7 +132,7 @@ class BalanceServiceTest {
                 BigDecimal invalidAmount = BigDecimal.ZERO;
                 UserBalance userBalance = createTestUserBalance(userId, "20000.00");
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
 
                 // When & Then
@@ -146,7 +152,7 @@ class BalanceServiceTest {
                 BigDecimal tooSmallAmount = new BigDecimal("500.00"); // 최소 1000원
                 UserBalance userBalance = createTestUserBalance(userId, "20000.00");
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
 
                 // When & Then
@@ -164,7 +170,7 @@ class BalanceServiceTest {
                 BigDecimal chargeAmount = new BigDecimal("1000000.00");
                 UserBalance userBalance = createTestUserBalance(userId, "9500000.00"); // 이미 많은 잔액 보유
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
 
                 // When & Then
@@ -405,6 +411,126 @@ class BalanceServiceTest {
                 }
 
                 return userBalance;
+        }
+
+        @Test
+        @DisplayName("낙관적 락 충돌 시 재시도 로직이 작동한다 - 2번째 시도에서 성공")
+        void 낙관적락_충돌시_재시도_로직_작동_성공() {
+                // Given
+                Long userId = 1L;
+                BigDecimal chargeAmount = new BigDecimal("30000.00");
+                UserBalance userBalance = createTestUserBalance(userId, "20000.00");
+                UserBalance savedBalance = createTestUserBalance(userId, "50000.00");
+
+                // 첫 번째 시도는 OptimisticLockingFailureException 발생, 두 번째 시도는 성공
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
+                                .thenReturn(Optional.of(userBalance));
+                when(userBalanceRepository.save(any(UserBalance.class)))
+                                .thenThrow(OptimisticLockingFailureException.class) // 첫 번째 시도
+                                .thenReturn(savedBalance); // 두 번째 시도
+                when(balanceHistoryRepository.save(any(BalanceHistory.class)))
+                                .thenReturn(mock(BalanceHistory.class));
+
+                // When
+                ChargeBalanceResponse response = balanceService.chargeBalance(userId, chargeAmount);
+
+                // Then
+                assertThat(response).isNotNull();
+                assertThat(response.userId()).isEqualTo(userId);
+                assertThat(response.currentBalance()).isEqualByComparingTo(new BigDecimal("50000.00"));
+
+                // 재시도로 인해 2번 호출되었는지 검증
+                verify(userBalanceJpaRepository, times(2)).findByUserIdWithOptimisticLock(userId);
+                verify(userBalanceRepository, times(2)).save(any(UserBalance.class));
+                verify(balanceHistoryRepository, times(1)).save(any(BalanceHistory.class)); // 성공 시 1번만
+        }
+
+        @Test
+        @DisplayName("낙관적 락 충돌 시 최대 재시도 횟수 초과하면 예외 발생")
+        void 낙관적락_충돌시_최대_재시도_초과하면_예외발생() {
+                // Given
+                Long userId = 1L;
+                BigDecimal chargeAmount = new BigDecimal("30000.00");
+                UserBalance userBalance = createTestUserBalance(userId, "20000.00");
+
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
+                                .thenReturn(Optional.of(userBalance));
+                // 모든 시도에서 OptimisticLockingFailureException 발생
+                when(userBalanceRepository.save(any(UserBalance.class)))
+                                .thenThrow(OptimisticLockingFailureException.class);
+
+                // When & Then
+                assertThatThrownBy(() -> balanceService.chargeBalance(userId, chargeAmount))
+                                .isInstanceOf(BalanceConcurrencyException.class);
+
+                // 최대 3회 시도했는지 검증
+                verify(userBalanceJpaRepository, times(3)).findByUserIdWithOptimisticLock(userId);
+                verify(userBalanceRepository, times(3)).save(any(UserBalance.class));
+                // 실패 시에는 히스토리 저장 안됨
+                verify(balanceHistoryRepository, never()).save(any(BalanceHistory.class));
+        }
+
+        @Test
+        @DisplayName("동시성 제어 충전 성공 - chargeBalanceWithConcurrencyControl 메서드 테스트")
+        void 동시성_제어_충전_성공() {
+                // Given
+                Long userId = 1L;
+                BigDecimal chargeAmount = new BigDecimal("40000.00");
+                UserBalance userBalance = createTestUserBalance(userId, "10000.00");
+                UserBalance savedBalance = createTestUserBalance(userId, "50000.00");
+
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
+                                .thenReturn(Optional.of(userBalance));
+                when(userBalanceRepository.save(any(UserBalance.class)))
+                                .thenReturn(savedBalance);
+                when(balanceHistoryRepository.save(any(BalanceHistory.class)))
+                                .thenReturn(mock(BalanceHistory.class));
+
+                // When
+                ChargeBalanceResponse response = balanceService.chargeBalanceWithConcurrencyControl(userId, chargeAmount);
+
+                // Then
+                assertThat(response).isNotNull();
+                assertThat(response.userId()).isEqualTo(userId);
+                assertThat(response.previousBalance()).isEqualByComparingTo(new BigDecimal("10000.00"));
+                assertThat(response.currentBalance()).isEqualByComparingTo(new BigDecimal("50000.00"));
+                assertThat(response.transactionId()).isNotNull();
+
+                verify(userBalanceJpaRepository).findByUserIdWithOptimisticLock(userId);
+                verify(userBalanceRepository).save(any(UserBalance.class));
+                verify(balanceHistoryRepository).save(any(BalanceHistory.class));
+        }
+
+        @Test
+        @DisplayName("동시성 제어 충전에서 재시도 로직 검증 - 마지막 시도에서 성공")
+        void 동시성_제어_충전_재시도_로직_검증() {
+                // Given
+                Long userId = 1L;
+                BigDecimal chargeAmount = new BigDecimal("25000.00");
+                UserBalance userBalance = createTestUserBalance(userId, "15000.00");
+                UserBalance savedBalance = createTestUserBalance(userId, "40000.00");
+
+                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
+                                .thenReturn(Optional.of(userBalance));
+                // 2번 실패 후 3번째 시도에서 성공
+                when(userBalanceRepository.save(any(UserBalance.class)))
+                                .thenThrow(OptimisticLockingFailureException.class) // 1차 실패
+                                .thenThrow(OptimisticLockingFailureException.class) // 2차 실패
+                                .thenReturn(savedBalance); // 3차 성공
+                when(balanceHistoryRepository.save(any(BalanceHistory.class)))
+                                .thenReturn(mock(BalanceHistory.class));
+
+                // When
+                ChargeBalanceResponse response = balanceService.chargeBalanceWithConcurrencyControl(userId, chargeAmount);
+
+                // Then
+                assertThat(response).isNotNull();
+                assertThat(response.currentBalance()).isEqualByComparingTo(new BigDecimal("40000.00"));
+
+                // 정확히 3번 시도했는지 검증 (최대 3회 중 마지막에 성공)
+                verify(userBalanceJpaRepository, times(3)).findByUserIdWithOptimisticLock(userId);
+                verify(userBalanceRepository, times(3)).save(any(UserBalance.class));
+                verify(balanceHistoryRepository, times(1)).save(any(BalanceHistory.class));
         }
 
         /**
