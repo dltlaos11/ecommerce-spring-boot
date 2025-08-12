@@ -98,35 +98,20 @@ public class BalanceService {
          */
         @Transactional
         public void deductBalance(Long userId, BigDecimal amount, String orderId) {
-                log.info("🔒 비관적 락 잔액 차감 시작: userId = {}, amount = {}", userId, amount);
-
-                // 비관적 락으로 조회
                 UserBalance userBalance = userBalanceJpaRepository.findByUserIdWithPessimisticLock(userId)
                                 .orElseThrow(() -> {
                                         log.error("잔액 차감 실패 - 사용자 잔액 없음: userId = {}", userId);
                                         return new IllegalArgumentException("사용자 잔액을 찾을 수 없습니다.");
                                 });
 
-                BigDecimal previousBalance = userBalance.getBalance();
-
-                // 도메인 로직 실행
                 userBalance.deduct(amount);
-
-                // 저장
                 UserBalance savedBalance = userBalanceRepository.save(userBalance);
 
-                // 이력 저장
                 BalanceHistory history = BalanceHistory.createPaymentHistory(
                                 userId, amount, savedBalance.getBalance(), orderId);
                 balanceHistoryRepository.save(history);
-
-                log.info("✅ 비관적 락 차감 성공: userId = {}, {} → {}",
-                                userId, previousBalance, savedBalance.getBalance());
         }
 
-        /**
-         * 잔액 환불 (결제 실패 시 호출)
-         */
         @Transactional
         public void refundBalance(Long userId, BigDecimal amount, String orderId) {
                 UserBalance userBalance = userBalanceRepository.findByUserId(userId)
@@ -136,7 +121,6 @@ public class BalanceService {
                                 });
 
                 userBalance.refund(amount);
-
                 UserBalance savedBalance = userBalanceRepository.save(userBalance);
 
                 BalanceHistory history = BalanceHistory.createRefundHistory(
@@ -144,9 +128,6 @@ public class BalanceService {
                 balanceHistoryRepository.save(history);
         }
 
-        /**
-         * 잔액 충분 여부 확인
-         */
         public boolean hasEnoughBalance(Long userId, BigDecimal amount) {
                 UserBalance userBalance = userBalanceRepository.findByUserId(userId)
                                 .orElse(new UserBalance(userId));
@@ -154,9 +135,6 @@ public class BalanceService {
                 return userBalance.hasEnoughBalance(amount);
         }
 
-        /**
-         * 사용자 잔액 변동 이력 조회
-         */
         public List<BalanceHistoryResponse> getBalanceHistories(Long userId, int limit) {
                 List<BalanceHistory> histories = balanceHistoryRepository
                                 .findRecentHistoriesByUserId(userId, limit);
@@ -166,17 +144,10 @@ public class BalanceService {
                                 .toList();
         }
 
-        /**
-         * 특정 거래 유형 이력 조회
-         */
         public List<BalanceHistoryResponse> getBalanceHistoriesByType(Long userId,
                         BalanceHistory.TransactionType transactionType) {
-                log.debug("📋 특정 유형 잔액 이력 조회: userId = {}, type = {}", userId, transactionType);
-
                 List<BalanceHistory> histories = balanceHistoryRepository
                                 .findByUserIdAndTransactionType(userId, transactionType);
-
-                log.debug("✅ 특정 유형 이력 조회 완료: {}개", histories.size());
 
                 return histories.stream()
                                 .map(this::convertToHistoryResponse)
@@ -212,15 +183,11 @@ public class BalanceService {
                                                 userId, amount, savedBalance.getBalance(), transactionId);
                                 balanceHistoryRepository.save(history);
 
-                                log.info("✅ 동시성 제어 충전 성공 ({}회 시도): userId = {}", attempt, userId);
-
                                 return new ChargeBalanceResponse(
                                                 userId, previousBalance, amount, savedBalance.getBalance(),
                                                 transactionId);
 
                         } catch (OptimisticLockingFailureException e) {
-                                log.warn("⚠️ 낙관적 락 충돌 - 재시도 {}/{}: userId = {}", attempt, maxRetries, userId);
-
                                 if (attempt >= maxRetries) {
                                         log.error("❌ 최대 재시도 횟수 초과: userId = {}", userId);
                                         throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
