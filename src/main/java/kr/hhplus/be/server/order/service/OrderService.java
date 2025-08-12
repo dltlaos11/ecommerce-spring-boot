@@ -175,7 +175,6 @@ public class OrderService {
                             product.price(),
                             itemRequest.quantity());
 
-                    // orderItem.setOrder(order);
                     return orderItemRepository.save(orderItem);
                 })
                 .toList();
@@ -197,7 +196,6 @@ public class OrderService {
                             product.price(),
                             itemRequest.quantity());
 
-                    // orderItem.setOrder(order);
                     return orderItemRepository.save(orderItem);
                 })
                 .toList();

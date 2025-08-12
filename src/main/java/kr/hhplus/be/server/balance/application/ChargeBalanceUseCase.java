@@ -23,14 +23,7 @@ public class ChargeBalanceUseCase {
 
     private final BalanceService balanceService;
 
-    /**
-     * 잔액 충전 유스케이스 실행
-     */
     public ChargeBalanceResponse execute(Long userId, BigDecimal amount) {
-        log.info("잔액 충전 유스케이스 실행: userId = {}, amount = {}", userId, amount);
-
-        ChargeBalanceResponse response = balanceService.chargeBalance(userId, amount);
-
-        return response;
+        return balanceService.chargeBalance(userId, amount);
     }
 }
