@@ -1,0 +1,55 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    # TestContainers에서 자동 설정됨
+    url: ${spring.datasource.url:}
+    username: ${spring.datasource.username:}
+    password: ${spring.datasource.password:}
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 180000
+      max-lifetime: 600000
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        default_batch_fetch_size: 1000
+        jdbc:
+          batch_size: 100
+        show_sql: false
+        format_sql: false
+        use_sql_comments: false
+    show-sql: false
+
+  data:
+    redis:
+      # TestContainers에서 자동 설정됨
+      host: ${spring.data.redis.host:localhost}
+      port: ${spring.data.redis.port:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 2
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 60000  # 테스트는 짧게 1분
+      key-prefix: "ecommerce:test::"
+
+logging:
+  level:
+    kr.hhplus.be.server: INFO
+    org.springframework.cache: DEBUG
+    redis.clients.jedis: DEBUG
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN
