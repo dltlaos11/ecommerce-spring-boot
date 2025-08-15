@@ -48,13 +48,7 @@ public class ProductRepositoryJpaImpl implements ProductRepository {
         log.debug("🗑️ 상품 삭제: id = {}", id);
     }
 
-    @Override
-    public Optional<Product> findByIdForUpdate(Long id) {
-        log.debug("🔒 상품 비관적 락 조회: id = {}", id);
-
-        // ✅ 현업 방식: SELECT FOR UPDATE로 재고 차감 시 동시성 제어
-        return jpaRepository.findByIdForUpdate(id);
-    }
+    // 비관적 락 메서드 제거 - 분산락으로 대체
 
     @Override
     @Transactional(readOnly = true)
