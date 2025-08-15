@@ -49,8 +49,5 @@ public interface CouponRepository {
      */
     void deleteById(Long id);
 
-    /**
-     * 비관적 락으로 쿠폰 조회 (선착순 발급용)
-     */
-    Optional<Coupon> findByIdForUpdate(Long id);
+    // 비관적 락 메서드 제거 - 분산락으로 대체
 }
