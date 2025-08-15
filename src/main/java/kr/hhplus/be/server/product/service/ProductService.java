@@ -14,13 +14,14 @@ import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.order.domain.OrderItem;
 import kr.hhplus.be.server.order.repository.OrderItemRepository;
 import kr.hhplus.be.server.product.domain.Product;
+import kr.hhplus.be.server.product.cache.ProductCacheService;
 import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.ProductNotFoundException;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 import lombok.extern.slf4j.Slf4j;
 
-// 비관적 락 기반 재고 관리
+// 분산락 + 캐시 기반 상품 관리
 @Slf4j
 @Service
 @Transactional(readOnly = true)
@@ -28,11 +29,14 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final OrderItemRepository orderItemRepository;
+    private final ProductCacheService productCacheService;
 
     public ProductService(ProductRepository productRepository,
-            OrderItemRepository orderItemRepository) {
+            OrderItemRepository orderItemRepository,
+            ProductCacheService productCacheService) {
         this.productRepository = productRepository;
         this.orderItemRepository = orderItemRepository;
+        this.productCacheService = productCacheService;
     }
 
     public List<ProductResponse> getAllProducts() {
@@ -43,7 +47,7 @@ public class ProductService {
     }
 
     public ProductResponse getProduct(Long productId) {
-        Product product = productRepository.findById(productId)
+        Product product = productCacheService.findProductById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
         return convertToResponse(product);
     }
@@ -135,19 +139,20 @@ public class ProductService {
         return product.hasEnoughStock(quantity);
     }
 
-    // 비관적 락을 사용한 재고 차감 (SELECT FOR UPDATE)
-    @Transactional
+    // 분산락 기반 재고 차감 (비관적 락 제거)
     public void reduceStock(Long productId, int quantity) {
-        Product product = productRepository.findByIdForUpdate(productId)
+        Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
 
         product.reduceStock(quantity);
         productRepository.save(product);
+        
+        // 재고 변경 시 캐시 무효화
+        productCacheService.evictProductCache(productId);
     }
 
-    @Transactional
     public void reduceStockWithValidation(Long productId, int quantity) {
-        Product product = productRepository.findByIdForUpdate(productId)
+        Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
 
         if (!product.hasEnoughStock(quantity)) {
@@ -161,19 +166,9 @@ public class ProductService {
 
         product.reduceStock(quantity);
         productRepository.save(product);
-    }
-
-    // 데드락 방지를 위한 ID 정렬 처리
-    @Transactional
-    public void reduceMultipleStocks(Map<Long, Integer> productQuantityMap) {
-        List<Long> sortedProductIds = productQuantityMap.keySet().stream()
-                .sorted()
-                .toList();
-
-        for (Long productId : sortedProductIds) {
-            int quantity = productQuantityMap.get(productId);
-            reduceStockWithValidation(productId, quantity);
-        }
+        
+        // 재고 변경 시 캐시 무효화
+        productCacheService.evictProductCache(productId);
     }
 
     @Transactional
@@ -183,6 +178,9 @@ public class ProductService {
 
         product.restoreStock(quantity);
         productRepository.save(product);
+        
+        // 재고 복원 시 캐시 무효화
+        productCacheService.evictProductCache(productId);
     }
 
     @Transactional
