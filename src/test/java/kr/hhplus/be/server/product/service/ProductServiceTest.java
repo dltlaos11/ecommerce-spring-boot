@@ -158,8 +158,8 @@ class ProductServiceTest {
         Long productId = 1L;
         Product product = createTestProduct(productId, "테스트 상품", "10000", 10);
 
-        // findByIdForUpdate 호출 시 상품 반환 (비관적 락 시뮬레이션)
-        when(productRepository.findByIdForUpdate(productId)).thenReturn(Optional.of(product));
+        // findById 호출 시 상품 반환 (분산락은 AOP에서 처리)
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
 
         // save 호출 시 저장된 상품 그대로 반환
         when(productRepository.save(any(Product.class))).thenReturn(product);
@@ -171,12 +171,12 @@ class ProductServiceTest {
         assertThat(product.getStockQuantity()).isEqualTo(7);
 
         // Mock 호출 검증
-        verify(productRepository).findByIdForUpdate(productId);
+        verify(productRepository).findById(productId);
         verify(productRepository).save(product);
 
         // 호출 순서 검증
         var inOrder = inOrder(productRepository);
-        inOrder.verify(productRepository).findByIdForUpdate(productId);
+        inOrder.verify(productRepository).findById(productId);
         inOrder.verify(productRepository).save(product);
     }
 
@@ -187,7 +187,7 @@ class ProductServiceTest {
         Long productId = 1L;
         Product product = createTestProduct(productId, "테스트 상품", "10000", 5);
 
-        when(productRepository.findByIdForUpdate(productId)).thenReturn(Optional.of(product));
+        when(productRepository.findById(productId)).thenReturn(Optional.of(product));
 
         // When & Then: 10개 차감 시도 → 예외 발생
         assertThatThrownBy(() -> productService.reduceStock(productId, 10))

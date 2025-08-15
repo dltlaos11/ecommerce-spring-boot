@@ -70,10 +70,5 @@ public class CouponRepositoryJpaImpl implements CouponRepository {
         log.debug("쿠폰 삭제: id = {}", id);
     }
 
-    @Override
-    public Optional<Coupon> findByIdForUpdate(Long id) {
-        log.debug("쿠폰 비관적 락 조회: id = {}", id);
-
-        return jpaRepository.findByIdForUpdate(id);
-    }
+    // 비관적 락 메서드 제거 - 분산락으로 대체
 }
