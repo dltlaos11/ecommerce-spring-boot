@@ -29,11 +29,5 @@ public interface CouponJpaRepository extends JpaRepository<Coupon, Long> {
             """)
     List<Coupon> findAvailableCoupons(@Param("now") LocalDateTime now);
 
-    /**
-     * 비관적 락으로 쿠폰 조회 (선착순 발급용)
-     * 🔒 SELECT FOR UPDATE
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM Coupon c WHERE c.id = :id")
-    Optional<Coupon> findByIdForUpdate(@Param("id") Long id);
+    // 비관적 락 메서드 제거 - 분산락으로 대체
 }

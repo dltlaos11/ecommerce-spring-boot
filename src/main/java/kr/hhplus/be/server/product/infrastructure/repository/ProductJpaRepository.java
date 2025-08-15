@@ -17,13 +17,7 @@ import kr.hhplus.be.server.product.domain.Product; // ✅ 통합된 Entity+Domai
  */
 public interface ProductJpaRepository extends JpaRepository<Product, Long> {
 
-    /**
-     * 비관적 락으로 상품 조회 (재고 차감용)
-     * 🔒 SELECT FOR UPDATE - 동시 재고 차감 방지
-     */
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM Product p WHERE p.id = :id")
-    Optional<Product> findByIdForUpdate(@Param("id") Long id);
+    // 비관적 락 메서드 제거 - 분산락으로 대체
 
     /**
      * 상품명 검색 (부분 일치)

@@ -49,11 +49,11 @@ public class CouponService {
                                 .toList();
         }
 
-        // 이중 방어 전략: 비관적 락 + 유니크 제약
+        // 분산락 기반 쿠폰 발급 (비관적 락 제거)
         @Transactional
         public IssuedCouponResponse issueCoupon(Long couponId, Long userId) {
                 try {
-                        Coupon coupon = couponJpaRepository.findByIdForUpdate(couponId)
+                        Coupon coupon = couponRepository.findById(couponId)
                                         .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
 
                         boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
@@ -78,12 +78,11 @@ public class CouponService {
         }
 
         /**
-         * 선착순 쿠폰 발급 (더 엄격한 동시성 제어)
+         * 선착순 쿠폰 발급 (분산락 기반)
          */
-        @Transactional
         public IssuedCouponResponse issueFirstComeCoupon(Long couponId, Long userId) {
                 try {
-                        Coupon coupon = couponJpaRepository.findByIdForUpdate(couponId)
+                        Coupon coupon = couponRepository.findById(couponId)
                                         .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
 
                         if (coupon.isExhausted()) {

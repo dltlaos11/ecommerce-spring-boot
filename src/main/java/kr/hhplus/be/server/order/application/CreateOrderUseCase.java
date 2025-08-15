@@ -5,11 +5,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.balance.service.BalanceService;
 import kr.hhplus.be.server.common.annotation.UseCase;
 import kr.hhplus.be.server.common.exception.ErrorCode;
+import kr.hhplus.be.server.common.lock.DistributedLock;
+import kr.hhplus.be.server.common.lock.Lockable;
+import kr.hhplus.be.server.order.lock.OrderProcessLock;
 import kr.hhplus.be.server.coupon.service.CouponService;
 import kr.hhplus.be.server.order.dto.CreateOrderRequest;
 import kr.hhplus.be.server.order.dto.OrderItemRequest;
@@ -33,13 +35,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @UseCase
 @RequiredArgsConstructor
-@Transactional
-public class CreateOrderUseCase {
+public class CreateOrderUseCase implements Lockable {
 
     private final OrderService orderService;
     private final ProductService productService;
     private final BalanceService balanceService;
     private final CouponService couponService;
+    
+    private Long currentUserId; // 현재 처리 중인 사용자 ID (락 키 생성용)
 
     /**
      * 주문 생성 유스케이스 실행
@@ -47,7 +50,9 @@ public class CreateOrderUseCase {
      * 비즈니스 워크플로우:
      * 1. 재고 검증 → 2. 쿠폰 할인 계산 → 3. 잔액 결제 → 4. 재고 차감 → 5. 쿠폰 사용 → 6. 주문 생성
      */
+    @DistributedLock(key = "ecommerce:order:process", waitTime = 5000, leaseTime = 10000)
     public OrderResponse execute(CreateOrderRequest request) {
+        this.currentUserId = request.userId();
         log.info("주문 생성 유스케이스 실행: userId = {}, 상품 {}개",
                 request.userId(), request.items().size());
 
@@ -182,5 +187,13 @@ public class CreateOrderUseCase {
                         item -> productService.getProduct(item.productId()),
                         (existing, replacement) -> existing // 중복 시 기존 값 유지
                 ));
+    }
+    
+    @Override
+    public String getLockKey() {
+        if (currentUserId != null) {
+            return new OrderProcessLock(currentUserId).getLockKey();
+        }
+        return "ecommerce:order:process:default";
     }
 }
