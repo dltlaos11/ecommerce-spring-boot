@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.coupon.domain.Coupon;
@@ -19,28 +18,19 @@ import kr.hhplus.be.server.coupon.dto.IssuedCouponResponse;
 import kr.hhplus.be.server.coupon.dto.UserCouponResponse;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyIssuedException;
 import kr.hhplus.be.server.coupon.exception.CouponNotFoundException;
-import kr.hhplus.be.server.coupon.infrastructure.repository.CouponJpaRepository;
 import kr.hhplus.be.server.coupon.repository.CouponRepository;
 import kr.hhplus.be.server.coupon.repository.UserCouponRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 // 동시성 제어: 비관적 락 + 유니크 제약 이중 방어
 @Slf4j
 @Service
-@Transactional(readOnly = true)
+@RequiredArgsConstructor
 public class CouponService {
 
         private final CouponRepository couponRepository;
-        private final CouponJpaRepository couponJpaRepository; // 직접 접근용
         private final UserCouponRepository userCouponRepository;
-
-        public CouponService(CouponRepository couponRepository,
-                        CouponJpaRepository couponJpaRepository,
-                        UserCouponRepository userCouponRepository) {
-                this.couponRepository = couponRepository;
-                this.couponJpaRepository = couponJpaRepository;
-                this.userCouponRepository = userCouponRepository;
-        }
 
         public List<AvailableCouponResponse> getAvailableCoupons() {
                 List<Coupon> availableCoupons = couponRepository.findAvailableCoupons();
@@ -49,30 +39,63 @@ public class CouponService {
                                 .toList();
         }
 
-        // 분산락 기반 쿠폰 발급 (비관적 락 제거)
-        @Transactional
+        // 분산락 기반 쿠폰 발급 (트랜잭션을 인프라 레이어로 이동)
         public IssuedCouponResponse issueCoupon(Long couponId, Long userId) {
+                return couponRepository.issueWithTransaction(couponId, userId,
+                                () -> processIssueCoupon(couponId, userId));
+        }
+
+        /**
+         * 트랜잭션 범위에서 쿠폰 발급 처리
+         */
+        private IssuedCouponResponse processIssueCoupon(Long couponId, Long userId) {
                 try {
+                        // 분산락 범위에서 최신 쿠폰 상태 조회
                         Coupon coupon = couponRepository.findById(couponId)
                                         .orElseThrow(() -> new CouponNotFoundException(ErrorCode.COUPON_NOT_FOUND));
 
+                        log.debug("쿠폰 발급 시작: couponId = {}, userId = {}, 현재 발급량 = {}/{}",
+                                        couponId, userId, coupon.getIssuedQuantity(), coupon.getTotalQuantity());
+
+                        // 쿠폰 소진 여부 검증
+                        if (coupon.isExhausted()) {
+                                log.warn("쿠폰 소진: couponId = {}, 발급량 = {}/{}",
+                                                couponId, coupon.getIssuedQuantity(), coupon.getTotalQuantity());
+                                throw new kr.hhplus.be.server.coupon.exception.CouponExhaustedException(
+                                                ErrorCode.COUPON_EXHAUSTED);
+                        }
+
+                        // 쿠폰 만료 여부 검증
+                        if (coupon.isExpired()) {
+                                log.warn("쿠폰 만료: couponId = {}", couponId);
+                                throw new kr.hhplus.be.server.coupon.exception.CouponExpiredException(
+                                                ErrorCode.COUPON_EXPIRED);
+                        }
+
+                        // 중복 발급 검증
                         boolean alreadyIssued = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
                                         .isPresent();
 
                         if (alreadyIssued) {
+                                log.warn("이미 발급된 쿠폰: userId = {}, couponId = {}", userId, couponId);
                                 throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
                         }
 
-                        coupon.validateIssuable();
-                        coupon.issue();
+                        // 검증 완료 후 수량 증가
+                        coupon.issueWithoutValidation();
                         Coupon savedCoupon = couponRepository.save(coupon);
 
                         UserCoupon userCoupon = new UserCoupon(userId, couponId);
                         UserCoupon savedUserCoupon = userCouponRepository.save(userCoupon);
 
+                        log.debug("쿠폰 발급 완료: userId = {}, couponId = {}, 발급량 = {}/{}",
+                                        userId, couponId, savedCoupon.getIssuedQuantity(),
+                                        savedCoupon.getTotalQuantity());
+
                         return convertToIssuedResponse(savedUserCoupon, savedCoupon);
 
                 } catch (DataIntegrityViolationException e) {
+                        log.warn("DB 제약 위반 - 중복 발급: userId = {}, couponId = {}", userId, couponId);
                         throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
                 }
         }
@@ -196,9 +219,8 @@ public class CouponService {
         }
 
         /**
-         * 쿠폰 사용 처리 - 동시성 안전
+         * 쿠폰 사용 처리 - 트랜잭션을 인프라 레이어로 이동
          */
-        @Transactional
         public BigDecimal useCoupon(Long userId, Long couponId, BigDecimal orderAmount) {
                 UserCoupon userCoupon = userCouponRepository.findByUserIdAndCouponId(userId, couponId)
                                 .orElseThrow(() -> new IllegalArgumentException("보유하지 않은 쿠폰입니다."));
@@ -225,9 +247,8 @@ public class CouponService {
         }
 
         /**
-         * 쿠폰 생성 (관리자 기능)
+         * 쿠폰 생성 (관리자 기능) - 트랜잭션을 인프라 레이어로 이동
          */
-        @Transactional
         public AvailableCouponResponse createCoupon(String name, Coupon.DiscountType discountType,
                         BigDecimal discountValue, Integer totalQuantity,
                         BigDecimal maxDiscountAmount, BigDecimal minimumOrderAmount,
