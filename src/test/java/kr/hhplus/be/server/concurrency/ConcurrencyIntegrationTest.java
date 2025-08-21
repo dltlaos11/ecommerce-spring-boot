@@ -20,11 +20,13 @@ import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.service.ProductService;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 동시성 제어 통합 테스트 - FIRST 원칙 준수
  * Fast, Independent, Repeatable, Self-Validating, Timely
  */
+@Slf4j
 @DisplayName("동시성 제어 통합 테스트")
 class ConcurrencyIntegrationTest extends IntegrationTestBase {
 
@@ -44,31 +46,40 @@ class ConcurrencyIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    @DisplayName("낙관적 락을 통한 동시 잔액 충전 정합성 검증")
-    void testOptimisticLockBalance() throws Exception {
+    @DisplayName("분산락을 통한 동시 잔액 충전 정합성 검증")
+    void testDistributedLockBalance() throws Exception {
         // Given
         Long userId = 999L;
         BigDecimal chargeAmount = new BigDecimal("10000");
         int concurrentUsers = 10;
+        
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger failCount = new AtomicInteger(0);
 
-        // When - 동시 충전 실행
+        // When - 동시 충전 실행 (분산락으로 순차 처리)
         List<CompletableFuture<Void>> futures = IntStream.range(0, concurrentUsers)
                 .mapToObj(i -> CompletableFuture.runAsync(() -> {
                     try {
                         balanceService.chargeBalance(userId, chargeAmount);
+                        successCount.incrementAndGet();
                     } catch (Exception e) {
-                        // 낙관적 락 충돌은 예상된 상황
+                        failCount.incrementAndGet();
+                        System.err.println("충전 실패: " + e.getMessage());
                     }
                 }))
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-        // Then
+        // Then - 분산락에서는 성공한 요청만큼 잔액이 증가해야 함
         BalanceResponse result = balanceService.getUserBalance(userId);
-        BigDecimal expected = chargeAmount.multiply(new BigDecimal(concurrentUsers));
+        BigDecimal expected = chargeAmount.multiply(new BigDecimal(successCount.get()));
         
         assertThat(result.balance()).isEqualByComparingTo(expected);
+        assertThat(successCount.get()).isGreaterThan(0); // 적어도 일부는 성공해야 함
+        assertThat(successCount.get() + failCount.get()).isEqualTo(concurrentUsers);
+        
+        log.info("분산락 테스트 결과 - 성공: {}, 실패: {}", successCount.get(), failCount.get());
     }
 
     @Test

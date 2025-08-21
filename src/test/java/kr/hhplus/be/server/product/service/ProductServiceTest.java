@@ -27,6 +27,7 @@ import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.InsufficientStockException;
 import kr.hhplus.be.server.product.exception.ProductNotFoundException;
 import kr.hhplus.be.server.product.repository.ProductRepository;
+import kr.hhplus.be.server.product.cache.ProductCacheService;
 
 /**
  * ProductService 단위 테스트
@@ -53,6 +54,9 @@ class ProductServiceTest {
     @Mock
     private OrderItemRepository orderItemRepository;
 
+    @Mock
+    private ProductCacheService productCacheService;
+
     @InjectMocks
     private ProductService productService; // 진짜 Service (Mock이 주입됨)
 
@@ -63,8 +67,8 @@ class ProductServiceTest {
         Long productId = 1L;
         Product mockProduct = createTestProduct(productId, "테스트 노트북", "1000000", 5);
 
-        // Stub 설정: productRepository.findById(1L) 호출 시 mockProduct 반환
-        when(productRepository.findById(productId)).thenReturn(Optional.of(mockProduct));
+        // Stub 설정: productCacheService.findProductById(1L) 호출 시 mockProduct 반환
+        when(productCacheService.findProductById(productId)).thenReturn(Optional.of(mockProduct));
 
         // When: 실제 테스트할 메서드 실행
         ProductResponse response = productService.getProduct(productId);
@@ -76,8 +80,8 @@ class ProductServiceTest {
         assertThat(response.price()).isEqualByComparingTo(new BigDecimal("1000000"));
         assertThat(response.stockQuantity()).isEqualTo(5);
 
-        // Mock 호출 검증: findById가 정확히 1번 호출되었는지 확인
-        verify(productRepository).findById(productId);
+        // Mock 호출 검증: 캐시 서비스가 호출되었는지 확인
+        verify(productCacheService).findProductById(productId);
     }
 
     @Test
@@ -85,13 +89,13 @@ class ProductServiceTest {
     void 상품조회_실패_상품없음() {
         // Given: 존재하지 않는 상품 시뮬레이션
         Long nonExistentProductId = 999L;
-        when(productRepository.findById(nonExistentProductId)).thenReturn(Optional.empty());
+        when(productCacheService.findProductById(nonExistentProductId)).thenReturn(Optional.empty());
 
         // When & Then: 예외 발생 검증
         assertThatThrownBy(() -> productService.getProduct(nonExistentProductId))
                 .isInstanceOf(ProductNotFoundException.class);
 
-        verify(productRepository).findById(nonExistentProductId);
+        verify(productCacheService).findProductById(nonExistentProductId);
     }
 
     @Test
@@ -173,11 +177,13 @@ class ProductServiceTest {
         // Mock 호출 검증
         verify(productRepository).findById(productId);
         verify(productRepository).save(product);
+        verify(productCacheService).evictProductCache(productId);
 
         // 호출 순서 검증
-        var inOrder = inOrder(productRepository);
+        var inOrder = inOrder(productRepository, productCacheService);
         inOrder.verify(productRepository).findById(productId);
         inOrder.verify(productRepository).save(product);
+        inOrder.verify(productCacheService).evictProductCache(productId);
     }
 
     @Test
@@ -218,6 +224,7 @@ class ProductServiceTest {
 
         verify(productRepository).findById(productId);
         verify(productRepository).save(product);
+        verify(productCacheService).evictProductCache(productId);
     }
 
     @Test
