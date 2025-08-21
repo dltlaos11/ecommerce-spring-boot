@@ -5,17 +5,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-
 import kr.hhplus.be.server.balance.service.BalanceService;
 import kr.hhplus.be.server.common.annotation.UseCase;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.common.lock.DistributedLock;
 import kr.hhplus.be.server.common.lock.Lockable;
-import kr.hhplus.be.server.order.lock.OrderProcessLock;
 import kr.hhplus.be.server.coupon.service.CouponService;
 import kr.hhplus.be.server.order.dto.CreateOrderRequest;
 import kr.hhplus.be.server.order.dto.OrderItemRequest;
 import kr.hhplus.be.server.order.dto.OrderResponse;
+import kr.hhplus.be.server.order.lock.OrderProcessLock;
 import kr.hhplus.be.server.order.service.OrderService;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.service.ProductService;
@@ -41,7 +40,7 @@ public class CreateOrderUseCase implements Lockable {
     private final ProductService productService;
     private final BalanceService balanceService;
     private final CouponService couponService;
-    
+
     private Long currentUserId; // 현재 처리 중인 사용자 ID (락 키 생성용)
 
     /**
@@ -188,12 +187,24 @@ public class CreateOrderUseCase implements Lockable {
                         (existing, replacement) -> existing // 중복 시 기존 값 유지
                 ));
     }
-    
+
     @Override
     public String getLockKey() {
         if (currentUserId != null) {
             return new OrderProcessLock(currentUserId).getLockKey();
         }
         return "ecommerce:order:process:default";
+    }
+
+    @Override
+    public String getLockKey(Object[] methodArgs) {
+        // AOP에서 메서드 파라미터 전달받아 정확한 키 생성
+        if (methodArgs != null && methodArgs.length > 0 &&
+                methodArgs[0] instanceof CreateOrderRequest) {
+            CreateOrderRequest request = (CreateOrderRequest) methodArgs[0];
+            return new OrderProcessLock(request.userId()).getLockKey();
+        }
+        // fallback to default implementation
+        return getLockKey();
     }
 }

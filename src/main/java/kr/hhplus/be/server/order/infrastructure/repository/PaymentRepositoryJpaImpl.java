@@ -42,6 +42,7 @@ public class PaymentRepositoryJpaImpl implements PaymentRepository {
     }
 
     @Override
+    @Transactional
     public Payment save(Payment payment) {
         log.debug("💾 결제 정보 저장: orderId = {}, amount = {}",
                 payment.getOrderId(), payment.getAmount());
@@ -51,12 +52,14 @@ public class PaymentRepositoryJpaImpl implements PaymentRepository {
     }
 
     @Override
+    @Transactional
     public void delete(Payment payment) {
         jpaRepository.delete(payment);
         log.debug("🗑️ 결제 정보 삭제: id = {}", payment.getId());
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("🗑️ 결제 정보 삭제: id = {}", id);
