@@ -2,8 +2,6 @@ package kr.hhplus.be.server.coupon.application;
 
 import java.util.List;
 
-import org.springframework.transaction.annotation.Transactional;
-
 import kr.hhplus.be.server.common.annotation.UseCase;
 import kr.hhplus.be.server.coupon.dto.AvailableCouponResponse;
 import kr.hhplus.be.server.coupon.dto.UserCouponResponse;
@@ -20,7 +18,6 @@ import lombok.RequiredArgsConstructor;
  */
 @UseCase
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class GetCouponsUseCase {
 
     private final CouponService couponService;

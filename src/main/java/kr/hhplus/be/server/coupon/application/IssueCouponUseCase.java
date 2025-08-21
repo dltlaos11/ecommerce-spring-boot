@@ -1,6 +1,5 @@
 package kr.hhplus.be.server.coupon.application;
 
-
 import kr.hhplus.be.server.common.annotation.UseCase;
 import kr.hhplus.be.server.common.lock.DistributedLock;
 import kr.hhplus.be.server.common.lock.Lockable;
@@ -21,9 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 public class IssueCouponUseCase implements Lockable {
 
     private final CouponService couponService;
-    
+
     private Long currentCouponId; // 현재 처리 중인 쿠폰 ID
-    private Long currentUserId;   // 현재 처리 중인 사용자 ID
+    private Long currentUserId; // 현재 처리 중인 사용자 ID
 
     /**
      * 쿠폰 발급 유스케이스 실행
@@ -32,19 +31,32 @@ public class IssueCouponUseCase implements Lockable {
     public IssuedCouponResponse execute(Long couponId, Long userId) {
         this.currentCouponId = couponId;
         this.currentUserId = userId;
-        
+
         log.info("쿠폰 발급 유스케이스 실행: couponId = {}, userId = {}", couponId, userId);
 
         IssuedCouponResponse response = couponService.issueCoupon(couponId, userId);
 
         return response;
     }
-    
+
     @Override
     public String getLockKey() {
-        if (currentCouponId != null && currentUserId != null) {
+        if (currentCouponId != null) {
             return new CouponIssueLock(currentCouponId, currentUserId).getLockKey();
         }
         return "ecommerce:coupon:issue:default";
+    }
+
+    @Override
+    public String getLockKey(Object[] methodArgs) {
+        // AOP에서 메서드 파라미터 전달받아 정확한 키 생성
+        if (methodArgs != null && methodArgs.length >= 2 &&
+                methodArgs[0] instanceof Long && methodArgs[1] instanceof Long) {
+            Long couponId = (Long) methodArgs[0];
+            Long userId = (Long) methodArgs[1];
+            return new CouponIssueLock(couponId, userId).getLockKey();
+        }
+        // fallback to default implementation
+        return getLockKey();
     }
 }
