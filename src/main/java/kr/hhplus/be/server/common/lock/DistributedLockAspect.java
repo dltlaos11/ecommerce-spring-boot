@@ -60,7 +60,9 @@ public class DistributedLockAspect {
         
         // Lockable 인터페이스 구현체인 경우
         if (target instanceof Lockable) {
-            return ((Lockable) target).getLockKey();
+            // 메서드 파라미터를 전달하여 정확한 키 생성
+            Object[] methodArgs = joinPoint.getArgs();
+            return ((Lockable) target).getLockKey(methodArgs);
         }
         
         // 어노테이션의 key 값 사용
