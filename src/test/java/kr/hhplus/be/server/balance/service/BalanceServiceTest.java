@@ -2,6 +2,7 @@ package kr.hhplus.be.server.balance.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -59,9 +60,11 @@ class BalanceServiceTest {
                 BalanceResponse response = balanceService.getUserBalance(userId);
 
                 // Then
-                assertThat(response).isNotNull();
-                assertThat(response.userId()).isEqualTo(userId);
-                assertThat(response.balance()).isEqualByComparingTo(new BigDecimal("50000.00"));
+                assertAll("잔액 조회 검증",
+                        () -> assertThat(response).isNotNull(),
+                        () -> assertThat(response.userId()).isEqualTo(userId),
+                        () -> assertThat(response.balance()).isEqualByComparingTo(new BigDecimal("50000.00"))
+                );
 
                 verify(userBalanceRepository).findByUserId(userId);
                 verify(userBalanceRepository, never()).save(any()); // 기존 사용자는 저장하지 않음
@@ -83,9 +86,11 @@ class BalanceServiceTest {
                 BalanceResponse response = balanceService.getUserBalance(userId);
 
                 // Then
-                assertThat(response).isNotNull();
-                assertThat(response.userId()).isEqualTo(userId);
-                assertThat(response.balance()).isEqualByComparingTo(BigDecimal.ZERO);
+                assertAll("새 사용자 잔액 검증",
+                        () -> assertThat(response).isNotNull(),
+                        () -> assertThat(response.userId()).isEqualTo(userId),
+                        () -> assertThat(response.balance()).isEqualByComparingTo(BigDecimal.ZERO)
+                );
 
                 verify(userBalanceRepository).findByUserId(userId);
                 verify(userBalanceRepository).save(any(UserBalance.class));
@@ -100,28 +105,27 @@ class BalanceServiceTest {
                 UserBalance userBalance = createTestUserBalance(userId, "20000.00");
                 UserBalance savedBalance = createTestUserBalance(userId, "50000.00");
 
-                when(userBalanceJpaRepository.findByUserIdWithOptimisticLock(userId))
+                // 비즈니스 행위에 집중: 사용자 조회 및 저장
+                when(userBalanceRepository.findByUserId(userId))
                                 .thenReturn(Optional.of(userBalance));
-                when(userBalanceRepository.save(any(UserBalance.class)))
+                when(userBalanceRepository.saveWithHistory(any(UserBalance.class), any(BalanceHistory.class)))
                                 .thenReturn(savedBalance);
-                when(balanceHistoryRepository.save(any(BalanceHistory.class)))
-                                .thenReturn(mock(BalanceHistory.class));
 
                 // When
                 ChargeBalanceResponse response = balanceService.chargeBalance(userId, chargeAmount);
 
-                // Then
-                assertThat(response).isNotNull();
-                assertThat(response.userId()).isEqualTo(userId);
-                assertThat(response.previousBalance()).isEqualByComparingTo(new BigDecimal("20000.00"));
-                assertThat(response.chargedAmount()).isEqualByComparingTo(chargeAmount);
-                assertThat(response.currentBalance()).isEqualByComparingTo(new BigDecimal("50000.00"));
-                assertThat(response.transactionId()).isNotNull();
+                // Then - 비즈니스 결과에 집중
+                assertAll("잔액 충전 결과 검증",
+                        () -> assertThat(response).isNotNull(),
+                        () -> assertThat(response.userId()).isEqualTo(userId),
+                        () -> assertThat(response.previousBalance()).isEqualByComparingTo(new BigDecimal("20000.00")),
+                        () -> assertThat(response.chargedAmount()).isEqualByComparingTo(chargeAmount),
+                        () -> assertThat(response.currentBalance()).isEqualByComparingTo(new BigDecimal("50000.00")),
+                        () -> assertThat(response.transactionId()).isNotNull()
+                );
 
-                // Mock 호출 검증
-                verify(userBalanceJpaRepository).findByUserIdWithOptimisticLock(userId);
-                verify(userBalanceRepository).save(any(UserBalance.class));
-                verify(balanceHistoryRepository).save(any(BalanceHistory.class));
+                // 비즈니스 핵심만 검증: 잔액과 히스토리가 함께 저장되었는지 확인
+                verify(userBalanceRepository).saveWithHistory(any(UserBalance.class), any(BalanceHistory.class));
         }
 
         @Test
@@ -190,7 +194,8 @@ class BalanceServiceTest {
                 UserBalance userBalance = createTestUserBalance(userId, "50000.00");
                 UserBalance savedBalance = createTestUserBalance(userId, "30000.00");
 
-                when(userBalanceRepository.findByUserId(userId))
+                // 비즈니스 행위에 집중: 사용자 조회 및 저장
+                when(userBalanceJpaRepository.findByUserIdWithPessimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
                 when(userBalanceRepository.save(any(UserBalance.class)))
                                 .thenReturn(savedBalance);
@@ -200,11 +205,10 @@ class BalanceServiceTest {
                 // When
                 balanceService.deductBalance(userId, deductAmount, orderId);
 
-                // Then: 도메인 객체의 상태 변경 확인
+                // Then: 비즈니스 결과에 집중 - 도메인 객체의 상태 변경 확인
                 assertThat(userBalance.getBalance()).isEqualByComparingTo(new BigDecimal("30000.00"));
 
-                // Mock 호출 검증
-                verify(userBalanceRepository).findByUserId(userId);
+                // 비즈니스 핵심만 검증: 저장이 일어났는지만 확인
                 verify(userBalanceRepository).save(userBalance);
                 verify(balanceHistoryRepository).save(any(BalanceHistory.class));
         }
@@ -218,7 +222,7 @@ class BalanceServiceTest {
                 String orderId = "ORD-12345";
                 UserBalance userBalance = createTestUserBalance(userId, "50000.00");
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithPessimisticLock(userId))
                                 .thenReturn(Optional.of(userBalance));
 
                 // When & Then
@@ -241,7 +245,7 @@ class BalanceServiceTest {
                 BigDecimal deductAmount = new BigDecimal("10000.00");
                 String orderId = "ORD-12345";
 
-                when(userBalanceRepository.findByUserId(userId))
+                when(userBalanceJpaRepository.findByUserIdWithPessimisticLock(userId))
                                 .thenReturn(Optional.empty());
 
                 // When & Then

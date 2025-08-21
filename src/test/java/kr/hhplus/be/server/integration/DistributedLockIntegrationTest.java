@@ -1,5 +1,23 @@
 package kr.hhplus.be.server.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+
 import kr.hhplus.be.server.balance.application.ChargeBalanceUseCase;
 import kr.hhplus.be.server.balance.domain.UserBalance;
 import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
@@ -13,32 +31,14 @@ import kr.hhplus.be.server.order.dto.OrderItemRequest;
 import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.repository.ProductRepository;
 import kr.hhplus.be.server.support.TestDataHelper;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.annotation.Rollback;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 분산락 통합 테스트
  * - Redis TestContainers 사용
  * - 실제 동시성 제어 검증
  */
+@Slf4j
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
@@ -46,22 +46,22 @@ class DistributedLockIntegrationTest {
 
     @Autowired
     private CreateOrderUseCase createOrderUseCase;
-    
+
     @Autowired
     private ChargeBalanceUseCase chargeBalanceUseCase;
-    
+
     @Autowired
     private IssueCouponUseCase issueCouponUseCase;
-    
+
     @Autowired
     private TestDataHelper testDataHelper;
-    
+
     @Autowired
     private ProductRepository productRepository;
-    
+
     @Autowired
     private UserBalanceRepository userBalanceRepository;
-    
+
     @Autowired
     private CouponRepository couponRepository;
 
@@ -102,20 +102,20 @@ class DistributedLockIntegrationTest {
             final long userId = i + 1;
             executorService.submit(() -> {
                 try {
-                    
+
                     // 주문 요청 생성
                     CreateOrderRequest orderRequest = new CreateOrderRequest(
                             userId,
                             List.of(new OrderItemRequest(testProduct.getId(), orderQuantity)),
                             null // 쿠폰 없음
                     );
-                    
+
                     createOrderUseCase.execute(orderRequest);
                     successCount.incrementAndGet();
-                    
+
                 } catch (Exception e) {
                     failCount.incrementAndGet();
-                    System.out.println("주문 실패: " + e.getMessage());
+                    log.debug("주문 실패: {}", e.getMessage());
                 } finally {
                     countDownLatch.countDown();
                 }
@@ -126,17 +126,17 @@ class DistributedLockIntegrationTest {
 
         // Then
         Product updatedProduct = productRepository.findById(testProduct.getId()).orElseThrow();
-        
+
         // 성공한 주문만큼 재고가 차감되어야 함
         int expectedRemainingStock = 100 - (successCount.get() * orderQuantity);
         assertThat(updatedProduct.getStockQuantity()).isEqualTo(expectedRemainingStock);
-        
+
         // 전체 주문 수량이 재고를 초과하므로 일부는 실패해야 함
         assertThat(successCount.get()).isLessThanOrEqualTo(20); // 100 / 5 = 20
         assertThat(failCount.get()).isGreaterThan(0);
-        
-        System.out.println("성공: " + successCount.get() + ", 실패: " + failCount.get() + 
-                         ", 남은 재고: " + updatedProduct.getStockQuantity());
+
+        log.info("주문 처리 결과 - 성공: {}, 실패: {}, 남은 재고: {}",
+                successCount.get(), failCount.get(), updatedProduct.getStockQuantity());
     }
 
     @Test
@@ -158,8 +158,7 @@ class DistributedLockIntegrationTest {
                     successCount.incrementAndGet();
                 } catch (Exception e) {
                     failCount.incrementAndGet();
-                    System.out.println("쿠폰 발급 실패: " + e.getMessage());
-                    e.printStackTrace();
+                    log.debug("쿠폰 발급 실패: {}", e.getMessage());
                 } finally {
                     countDownLatch.countDown();
                 }
@@ -170,14 +169,14 @@ class DistributedLockIntegrationTest {
 
         // Then
         Coupon updatedCoupon = couponRepository.findById(testCoupon.getId()).orElseThrow();
-        
+
         // 발급 가능 수량만큼만 성공해야 함
         assertThat(successCount.get()).isEqualTo(10);
         assertThat(failCount.get()).isEqualTo(5);
         assertThat(updatedCoupon.getIssuedQuantity()).isEqualTo(10);
-        
-        System.out.println("쿠폰 발급 성공: " + successCount.get() + ", 실패: " + failCount.get() + 
-                         ", 발급된 수량: " + updatedCoupon.getIssuedQuantity());
+
+        log.info("쿠폰 발급 결과 - 성공: {}, 실패: {}, 발급된 수량: {}",
+                successCount.get(), failCount.get(), updatedCoupon.getIssuedQuantity());
     }
 
     @Test
@@ -197,7 +196,7 @@ class DistributedLockIntegrationTest {
                     chargeBalanceUseCase.execute(testUserBalance.getUserId(), chargeAmount);
                     successCount.incrementAndGet();
                 } catch (Exception e) {
-                    System.out.println("잔액 충전 실패: " + e.getMessage());
+                    log.debug("잔액 충전 실패: {}", e.getMessage());
                 } finally {
                     countDownLatch.countDown();
                 }
@@ -208,15 +207,15 @@ class DistributedLockIntegrationTest {
 
         // Then
         UserBalance updatedBalance = userBalanceRepository.findByUserId(testUserBalance.getUserId()).orElseThrow();
-        
+
         // 초기 잔액 + (성공한 충전 횟수 * 충전 금액)
         BigDecimal expectedBalance = BigDecimal.valueOf(1000000)
                 .add(chargeAmount.multiply(BigDecimal.valueOf(successCount.get())));
-        
+
         assertThat(updatedBalance.getBalance()).isEqualByComparingTo(expectedBalance);
         assertThat(successCount.get()).isEqualTo(threadCount); // 모든 충전이 성공해야 함
-        
-        System.out.println("잔액 충전 성공: " + successCount.get() + 
-                         ", 최종 잔액: " + updatedBalance.getBalance());
+
+        log.info("잔액 충전 결과 - 성공: {}, 최종 잔액: {}",
+                successCount.get(), updatedBalance.getBalance());
     }
 }

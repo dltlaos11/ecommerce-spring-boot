@@ -51,22 +51,15 @@ public class TestDataHelper {
      * 테스트용 사용자 잔액 생성 후 충전
      */
     public UserBalance createUserBalanceWithAmount(Long userId, BigDecimal amount) {
-        // 1. 기존 잔액이 있는지 확인
         var existingBalance = userBalanceRepository.findByUserId(userId);
         if (existingBalance.isPresent()) {
             UserBalance userBalance = existingBalance.get();
-            // 기존 잔액에 추가 충전
             userBalance.charge(amount);
             return userBalanceRepository.save(userBalance);
         }
 
-        // 2. 새로운 잔액 생성
         UserBalance userBalance = userBalanceRepository.save(new UserBalance(userId));
-
-        // 3. 비즈니스 로직을 통한 잔액 충전
         userBalance.charge(amount);
-
-        // 4. 변경사항 저장
         return userBalanceRepository.save(userBalance);
     }
 
