@@ -8,36 +8,32 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.common.exception.ErrorCode;
+import kr.hhplus.be.server.common.lock.DistributedLock;
+import kr.hhplus.be.server.common.lock.Lockable;
 import kr.hhplus.be.server.order.domain.OrderItem;
 import kr.hhplus.be.server.order.repository.OrderItemRepository;
-import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.cache.ProductCacheService;
+import kr.hhplus.be.server.product.domain.Product;
 import kr.hhplus.be.server.product.dto.PopularProductResponse;
 import kr.hhplus.be.server.product.dto.ProductResponse;
 import kr.hhplus.be.server.product.exception.ProductNotFoundException;
 import kr.hhplus.be.server.product.repository.ProductRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 // 분산락 + 캐시 기반 상품 관리
 @Slf4j
 @Service
-@Transactional(readOnly = true)
-public class ProductService {
+@RequiredArgsConstructor
+public class ProductService implements Lockable {
 
     private final ProductRepository productRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductCacheService productCacheService;
 
-    public ProductService(ProductRepository productRepository,
-            OrderItemRepository orderItemRepository,
-            ProductCacheService productCacheService) {
-        this.productRepository = productRepository;
-        this.orderItemRepository = orderItemRepository;
-        this.productCacheService = productCacheService;
-    }
+    private Long currentProductId; // 현재 처리 중인 상품 ID
 
     public List<ProductResponse> getAllProducts() {
         List<Product> products = productRepository.findAll();
@@ -85,7 +81,6 @@ public class ProductService {
         List<OrderItem> recentOrderItems = orderItemRepository.findAll().stream()
                 .filter(item -> item.getCreatedAt().isAfter(startDate))
                 .collect(Collectors.toList());
-
 
         // 2. 상품별 판매 통계 집계
         Map<Long, ProductSalesStats> salesStatsMap = recentOrderItems.stream()
@@ -140,13 +135,16 @@ public class ProductService {
     }
 
     // 분산락 기반 재고 차감 (비관적 락 제거)
+    @DistributedLock(key = "ecommerce:product:stock", waitTime = 3000, leaseTime = 5000)
     public void reduceStock(Long productId, int quantity) {
+        this.currentProductId = productId;
+
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
 
         product.reduceStock(quantity);
         productRepository.save(product);
-        
+
         // 재고 변경 시 캐시 무효화
         productCacheService.evictProductCache(productId);
     }
@@ -166,24 +164,22 @@ public class ProductService {
 
         product.reduceStock(quantity);
         productRepository.save(product);
-        
+
         // 재고 변경 시 캐시 무효화
         productCacheService.evictProductCache(productId);
     }
 
-    @Transactional
     public void restoreStock(Long productId, int quantity) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
 
         product.restoreStock(quantity);
         productRepository.save(product);
-        
+
         // 재고 복원 시 캐시 무효화
         productCacheService.evictProductCache(productId);
     }
 
-    @Transactional
     public ProductResponse createProduct(String name, BigDecimal price, Integer stockQuantity) {
         Product product = new Product(name, price, stockQuantity);
         Product savedProduct = productRepository.save(product);
@@ -191,7 +187,6 @@ public class ProductService {
         return convertToResponse(savedProduct);
     }
 
-    @Transactional
     public ProductResponse updateProduct(Long productId, String name, BigDecimal price) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
@@ -202,7 +197,6 @@ public class ProductService {
         return convertToResponse(savedProduct);
     }
 
-    @Transactional
     public void deleteProduct(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ProductNotFoundException(ErrorCode.PRODUCT_NOT_FOUND));
@@ -234,5 +228,24 @@ public class ProductService {
             this.totalQuantity = totalQuantity;
             this.totalAmount = totalAmount;
         }
+    }
+
+    @Override
+    public String getLockKey() {
+        if (currentProductId != null) {
+            return "ecommerce:product:stock:" + currentProductId;
+        }
+        return "ecommerce:product:stock:default";
+    }
+
+    @Override
+    public String getLockKey(Object[] methodArgs) {
+        // AOP에서 메서드 파라미터 전달받아 정확한 키 생성
+        if (methodArgs != null && methodArgs.length > 0 && methodArgs[0] instanceof Long) {
+            Long productId = (Long) methodArgs[0];
+            return "ecommerce:product:stock:" + productId;
+        }
+        // fallback to default implementation
+        return getLockKey();
     }
 }
