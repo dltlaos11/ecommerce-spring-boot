@@ -2,8 +2,6 @@ package kr.hhplus.be.server.order.application;
 
 import java.util.List;
 
-import org.springframework.transaction.annotation.Transactional;
-
 import kr.hhplus.be.server.common.annotation.UseCase;
 import kr.hhplus.be.server.order.dto.OrderResponse;
 import kr.hhplus.be.server.order.service.OrderService;
@@ -20,7 +18,6 @@ import lombok.RequiredArgsConstructor;
  */
 @UseCase
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class GetOrdersUseCase {
 
     private final OrderService orderService;

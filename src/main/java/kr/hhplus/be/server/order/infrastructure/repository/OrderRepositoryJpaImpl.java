@@ -48,6 +48,7 @@ public class OrderRepositoryJpaImpl implements OrderRepository {
     }
 
     @Override
+    @Transactional
     public Order save(Order order) {
         log.debug("💾 주문 저장: orderNumber = {}, userId = {}",
                 order.getOrderNumber(), order.getUserId());
@@ -57,12 +58,14 @@ public class OrderRepositoryJpaImpl implements OrderRepository {
     }
 
     @Override
+    @Transactional
     public void delete(Order order) {
         jpaRepository.delete(order);
         log.debug("🗑️ 주문 삭제: id = {}", order.getId());
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("🗑️ 주문 삭제: id = {}", id);

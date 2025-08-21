@@ -49,6 +49,7 @@ public class OrderItemRepositoryJpaImpl implements OrderItemRepository {
     }
 
     @Override
+    @Transactional
     public OrderItem save(OrderItem orderItem) {
         log.debug("주문 항목 저장: orderId = {}, productId = {}, quantity = {}",
                 orderItem.getOrderId(), orderItem.getProductId(), orderItem.getQuantity());
@@ -57,18 +58,21 @@ public class OrderItemRepositoryJpaImpl implements OrderItemRepository {
     }
 
     @Override
+    @Transactional
     public void delete(OrderItem orderItem) {
         jpaRepository.delete(orderItem);
         log.debug("주문 항목 삭제: id = {}", orderItem.getId());
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("주문 항목 삭제: id = {}", id);
     }
 
     @Override
+    @Transactional
     public void deleteByOrderId(Long orderId) {
         jpaRepository.deleteByOrderId(orderId);
         log.debug("주문별 항목 삭제: orderId = {}", orderId);
