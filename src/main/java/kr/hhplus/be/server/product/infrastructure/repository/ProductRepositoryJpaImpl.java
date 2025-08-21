@@ -33,16 +33,19 @@ public class ProductRepositoryJpaImpl implements ProductRepository {
     }
 
     @Override
+    @Transactional
     public Product save(Product product) {
         return jpaRepository.save(product);
     }
 
     @Override
+    @Transactional
     public void delete(Product product) {
         jpaRepository.delete(product);
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("🗑️ 상품 삭제: id = {}", id);
