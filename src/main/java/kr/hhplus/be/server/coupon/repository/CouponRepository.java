@@ -2,8 +2,10 @@ package kr.hhplus.be.server.coupon.repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import kr.hhplus.be.server.coupon.domain.Coupon;
+import kr.hhplus.be.server.coupon.dto.IssuedCouponResponse;
 
 /**
  * 쿠폰 저장소 인터페이스 (Domain Layer)
@@ -48,6 +50,12 @@ public interface CouponRepository {
      * ID로 쿠폰 삭제
      */
     void deleteById(Long id);
+
+    /**
+     * 트랜잭션 범위에서 쿠폰 발급 처리 (인프라 레이어로 이동된 트랜잭션)
+     */
+    IssuedCouponResponse issueWithTransaction(Long couponId, Long userId, 
+            Supplier<IssuedCouponResponse> issueCouponLogic);
 
     // 비관적 락 메서드 제거 - 분산락으로 대체
 }

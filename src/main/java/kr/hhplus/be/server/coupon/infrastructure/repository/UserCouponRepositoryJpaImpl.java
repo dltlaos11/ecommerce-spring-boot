@@ -48,6 +48,7 @@ public class UserCouponRepositoryJpaImpl implements UserCouponRepository {
     }
 
     @Override
+    @Transactional
     public UserCoupon save(UserCoupon userCoupon) {
         log.debug("💾 사용자 쿠폰 저장: userId = {}, couponId = {}, status = {}",
                 userCoupon.getUserId(), userCoupon.getCouponId(), userCoupon.getStatus());
@@ -57,12 +58,14 @@ public class UserCouponRepositoryJpaImpl implements UserCouponRepository {
     }
 
     @Override
+    @Transactional
     public void delete(UserCoupon userCoupon) {
         jpaRepository.delete(userCoupon);
         log.debug("🗑️ 사용자 쿠폰 삭제: id = {}", userCoupon.getId());
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("🗑️ 사용자 쿠폰 삭제: id = {}", id);

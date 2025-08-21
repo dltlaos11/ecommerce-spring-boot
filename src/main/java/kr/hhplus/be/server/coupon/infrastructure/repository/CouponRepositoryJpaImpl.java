@@ -3,11 +3,13 @@ package kr.hhplus.be.server.coupon.infrastructure.repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.coupon.domain.Coupon;
+import kr.hhplus.be.server.coupon.dto.IssuedCouponResponse;
 import kr.hhplus.be.server.coupon.repository.CouponRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,7 @@ public class CouponRepositoryJpaImpl implements CouponRepository {
     }
 
     @Override
+    @Transactional
     public Coupon save(Coupon coupon) {
         log.debug("쿠폰 저장: name = {}, type = {}, quantity = {}/{}",
                 coupon.getName(), coupon.getDiscountType(),
@@ -59,15 +62,25 @@ public class CouponRepositoryJpaImpl implements CouponRepository {
     }
 
     @Override
+    @Transactional
     public void delete(Coupon coupon) {
         jpaRepository.delete(coupon);
         log.debug("쿠폰 삭제: id = {}", coupon.getId());
     }
 
     @Override
+    @Transactional
     public void deleteById(Long id) {
         jpaRepository.deleteById(id);
         log.debug("쿠폰 삭제: id = {}", id);
+    }
+
+    @Override
+    @Transactional
+    public IssuedCouponResponse issueWithTransaction(Long couponId, Long userId, 
+            Supplier<IssuedCouponResponse> issueCouponLogic) {
+        log.debug("인프라 레이어 트랜잭션 시작: couponId = {}, userId = {}", couponId, userId);
+        return issueCouponLogic.get();
     }
 
     // 비관적 락 메서드 제거 - 분산락으로 대체

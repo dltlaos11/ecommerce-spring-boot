@@ -167,6 +167,13 @@ public class Coupon {
     }
 
     /**
+     * 검증 없이 수량만 증가 (분산락에서 이미 검증 완료한 경우)
+     */
+    public void issueWithoutValidation() {
+        this.issuedQuantity++;
+    }
+
+    /**
      * 만료 여부 확인
      */
     public boolean isExpired() {
