@@ -43,7 +43,7 @@ public class ProductCacheService {
     /**
      * 상품 목록 조회 - 인기 상품 캐싱
      */
-    @Cacheable(value = "popular-products", key = "'top10'")
+    @Cacheable(value = "popular-products", key = "'top10'", unless = "#result == null || #result.isEmpty()")
     public List<Product> getPopularProducts() {
         log.debug("캐시 미스 - DB에서 인기 상품 조회");
         // 실제로는 조회수나 판매량 기준으로 정렬해야 하지만, 여기서는 단순히 전체 조회

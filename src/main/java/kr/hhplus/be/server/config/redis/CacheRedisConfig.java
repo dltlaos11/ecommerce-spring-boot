@@ -1,8 +1,10 @@
 package kr.hhplus.be.server.config.redis;
 
+import java.time.Duration;
+import java.util.List;
+
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -11,20 +13,14 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisClusterConfiguration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.connection.lettuce.LettucePoolingClientConfiguration;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
-import java.time.Duration;
-import java.util.List;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 캐시용 Redis 설정
@@ -35,6 +31,12 @@ import java.util.List;
 @Configuration
 @EnableCaching
 public class CacheRedisConfig {
+
+    private final ObjectMapper objectMapper;
+
+    public CacheRedisConfig(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Value("${spring.data.redis.host:localhost}")
     private String redisHost;
@@ -52,14 +54,16 @@ public class CacheRedisConfig {
     @Primary
     public LettuceConnectionFactory cacheRedisConnectionFactory() {
         LettucePoolingClientConfiguration poolConfig = LettucePoolingClientConfiguration.builder()
-                .poolConfig(new GenericObjectPoolConfig<>() {{
-                    setMaxTotal(8);   // 캐시용은 적은 커넥션으로 충분
-                    setMaxIdle(4);
-                    setMinIdle(2);
-                    setTestOnBorrow(true);
-                    setTestOnReturn(true);
-                    setTestWhileIdle(true);
-                }})
+                .poolConfig(new GenericObjectPoolConfig<>() {
+                    {
+                        setMaxTotal(8); // 캐시용은 적은 커넥션으로 충분
+                        setMaxIdle(4);
+                        setMinIdle(2);
+                        setTestOnBorrow(true);
+                        setTestOnReturn(true);
+                        setTestWhileIdle(true);
+                    }
+                })
                 .commandTimeout(Duration.ofMillis(2000))
                 .build();
 
@@ -80,19 +84,12 @@ public class CacheRedisConfig {
     public RedisTemplate<String, Object> cacheRedisTemplate() {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(cacheRedisConnectionFactory());
-        
-        // ObjectMapper 설정 - LocalDateTime 직렬화 및 타입 정보 보존
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        objectMapper.activateDefaultTyping(
-            BasicPolymorphicTypeValidator.builder()
-                .allowIfBaseType(Object.class)
-                .build(),
-            ObjectMapper.DefaultTyping.NON_FINAL
-        );
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
-        
+
+        // Jackson2JsonRedisSerializer 생성 - 타입 정보 보존 설정
+        ObjectMapper mapper = objectMapper.copy();
+        mapper.activateDefaultTyping(mapper.getPolymorphicTypeValidator(), ObjectMapper.DefaultTyping.NON_FINAL);
+        Jackson2JsonRedisSerializer<Object> jsonSerializer = new Jackson2JsonRedisSerializer<>(mapper, Object.class);
+
         template.setKeySerializer(new StringRedisSerializer());
         template.setValueSerializer(jsonSerializer);
         template.setHashKeySerializer(new StringRedisSerializer());
@@ -105,25 +102,18 @@ public class CacheRedisConfig {
     @Bean
     @Primary
     public CacheManager cacheManager() {
-        // ObjectMapper 설정 - LocalDateTime 직렬화 및 타입 정보 보존
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        objectMapper.activateDefaultTyping(
-            BasicPolymorphicTypeValidator.builder()
-                .allowIfBaseType(Object.class)
-                .build(),
-            ObjectMapper.DefaultTyping.NON_FINAL
-        );
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
-        
+        // Jackson2JsonRedisSerializer 생성 - 타입 정보 보존 설정
+        ObjectMapper mapper = objectMapper.copy();
+        mapper.activateDefaultTyping(mapper.getPolymorphicTypeValidator(), ObjectMapper.DefaultTyping.NON_FINAL);
+        Jackson2JsonRedisSerializer<Object> jsonSerializer = new Jackson2JsonRedisSerializer<>(mapper, Object.class);
+
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMillis(defaultTtl))
-                .disableCachingNullValues()
                 .serializeKeysWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
-                .serializeValuesWith(org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair
-                        .fromSerializer(jsonSerializer));
+                .serializeValuesWith(
+                        org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair
+                                .fromSerializer(jsonSerializer));
 
         return RedisCacheManager.builder(cacheRedisConnectionFactory())
                 .cacheDefaults(config)
