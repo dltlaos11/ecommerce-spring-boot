@@ -43,8 +43,8 @@ public class UserBalance {
     @Column(name = "balance", precision = 15, scale = 2, nullable = false)
     private BigDecimal balance = BigDecimal.ZERO;
 
-    @Version // 🔒 낙관적 락
-    private Long version;
+    // @Version // 분산락 환경에서는 버전 체크 불필요
+    // private Long version;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -143,9 +143,9 @@ public class UserBalance {
         this.balance = balance;
     }
 
-    void setVersion(Long version) {
-        this.version = version;
-    }
+    // void setVersion(Long version) {
+    //     this.version = version;
+    // }
 
     void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;

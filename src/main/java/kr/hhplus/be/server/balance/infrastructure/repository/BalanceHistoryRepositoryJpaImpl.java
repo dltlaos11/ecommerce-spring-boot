@@ -24,6 +24,7 @@ public class BalanceHistoryRepositoryJpaImpl implements BalanceHistoryRepository
     private final BalanceHistoryJpaRepository jpaRepository;
 
     @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRED)
     public BalanceHistory save(BalanceHistory history) {
         log.debug("📝 잔액 이력 저장: userId = {}, type = {}, amount = {}",
                 history.getUserId(), history.getTransactionType(), history.getAmount());
