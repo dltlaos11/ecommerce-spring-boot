@@ -33,6 +33,12 @@ public class ProductRepositoryJpaImpl implements ProductRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Product> findAllById(List<Long> ids) {
+        return jpaRepository.findAllById(ids);
+    }
+
+    @Override
     @Transactional
     public Product save(Product product) {
         return jpaRepository.save(product);
