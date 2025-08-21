@@ -2,8 +2,6 @@ package kr.hhplus.be.server.balance.application;
 
 import java.util.List;
 
-import org.springframework.transaction.annotation.Transactional;
-
 import kr.hhplus.be.server.balance.dto.BalanceHistoryResponse;
 import kr.hhplus.be.server.balance.dto.BalanceResponse;
 import kr.hhplus.be.server.balance.service.BalanceService;
@@ -17,7 +15,6 @@ import lombok.RequiredArgsConstructor;
  */
 @UseCase
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class GetBalanceUseCase {
 
     private final BalanceService balanceService;

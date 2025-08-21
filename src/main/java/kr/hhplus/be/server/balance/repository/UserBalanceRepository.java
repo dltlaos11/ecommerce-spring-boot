@@ -61,4 +61,23 @@ public interface UserBalanceRepository {
      * @param userBalance 삭제할 잔액 정보
      */
     void delete(UserBalance userBalance);
+
+    /**
+     * 잔액 충전을 위한 트랜잭션 포함 저장
+     * UserBalance 저장과 BalanceHistory 저장을 하나의 트랜잭션으로 처리
+     * 
+     * @param userBalance 저장할 잔액 정보
+     * @param balanceHistory 저장할 잔액 이력
+     * @return 저장된 잔액 정보
+     */
+    UserBalance saveWithHistory(UserBalance userBalance, kr.hhplus.be.server.balance.domain.BalanceHistory balanceHistory);
+
+    /**
+     * 잔액 차감을 트랜잭션과 함께 처리 (분산락 환경에서)
+     * 
+     * @param userId 사용자 ID
+     * @param amount 차감 금액
+     * @param orderId 주문 ID
+     */
+    void deductBalanceWithTransaction(Long userId, java.math.BigDecimal amount, String orderId);
 }

@@ -4,39 +4,26 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import kr.hhplus.be.server.balance.domain.BalanceHistory;
 import kr.hhplus.be.server.balance.domain.UserBalance;
 import kr.hhplus.be.server.balance.dto.BalanceHistoryResponse;
 import kr.hhplus.be.server.balance.dto.BalanceResponse;
 import kr.hhplus.be.server.balance.dto.ChargeBalanceResponse;
-import kr.hhplus.be.server.balance.exception.BalanceConcurrencyException;
-import kr.hhplus.be.server.balance.infrastructure.repository.UserBalanceJpaRepository;
 import kr.hhplus.be.server.balance.repository.BalanceHistoryRepository;
 import kr.hhplus.be.server.balance.repository.UserBalanceRepository;
-import kr.hhplus.be.server.common.exception.ErrorCode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-// 낙관적 락 기반 잔액 관리
+// 분산락 기반 잔액 관리
 @Slf4j
 @Service
-@Transactional(readOnly = true)
+@RequiredArgsConstructor
 public class BalanceService {
 
         private final UserBalanceRepository userBalanceRepository;
-        private final UserBalanceJpaRepository userBalanceJpaRepository; // 직접 접근용
         private final BalanceHistoryRepository balanceHistoryRepository;
-
-        public BalanceService(UserBalanceRepository userBalanceRepository,
-                        UserBalanceJpaRepository userBalanceJpaRepository,
-                        BalanceHistoryRepository balanceHistoryRepository) {
-                this.userBalanceRepository = userBalanceRepository;
-                this.userBalanceJpaRepository = userBalanceJpaRepository;
-                this.balanceHistoryRepository = balanceHistoryRepository;
-        }
 
         public BalanceResponse getUserBalance(Long userId) {
                 UserBalance userBalance = userBalanceRepository.findByUserId(userId)
@@ -45,74 +32,39 @@ public class BalanceService {
                 return convertToBalanceResponse(userBalance);
         }
 
-        @Transactional
         public ChargeBalanceResponse chargeBalance(Long userId, BigDecimal amount) {
+                log.debug("💰 잔액 충전 시작: userId = {}, amount = {}", userId, amount);
 
-                int maxAttempts = 3;
-                int attempt = 0;
+                // 분산락 환경에서는 일반 조회 사용 (동시성은 분산락이 보장)
+                UserBalance userBalance = userBalanceRepository.findByUserId(userId)
+                                .orElseGet(() -> createNewUserBalance(userId));
 
-                while (attempt < maxAttempts) {
-                        try {
-                                attempt++;
+                BigDecimal previousBalance = userBalance.getBalance();
+                userBalance.charge(amount);
 
-                                UserBalance userBalance = userBalanceJpaRepository
-                                                .findByUserIdWithOptimisticLock(userId)
-                                                .orElseGet(() -> createNewUserBalance(userId));
+                String transactionId = generateTransactionId("CHARGE");
 
-                                BigDecimal previousBalance = userBalance.getBalance();
-                                userBalance.charge(amount);
+                // 인프라 레이어에서 트랜잭션 관리: UserBalance + BalanceHistory 동시 저장
+                BalanceHistory history = BalanceHistory.createChargeHistory(
+                                userId, amount, userBalance.getBalance(), transactionId);
+                UserBalance savedBalance = userBalanceRepository.saveWithHistory(userBalance, history);
 
-                                String transactionId = generateTransactionId("CHARGE");
-                                UserBalance savedBalance = userBalanceRepository.save(userBalance);
+                log.debug("✅ 잔액 충전 완료: userId = {}, 이전잔액 = {}, 충전금액 = {}, 최종잔액 = {}",
+                                userId, previousBalance, amount, savedBalance.getBalance());
 
-                                BalanceHistory history = BalanceHistory.createChargeHistory(
-                                                userId, amount, savedBalance.getBalance(), transactionId);
-                                balanceHistoryRepository.save(history);
-
-                                return new ChargeBalanceResponse(
-                                                userId, previousBalance, amount, savedBalance.getBalance(),
-                                                transactionId);
-
-                        } catch (OptimisticLockingFailureException e) {
-
-                                if (attempt >= maxAttempts) {
-                                        log.error("❌ 최대 재시도 횟수 초과: userId = {}", userId);
-                                        throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
-                                }
-
-                                // 짧은 대기 후 재시도
-                                try {
-                                        Thread.sleep(50 * attempt); // 백오프 (50ms, 100ms, 150ms)
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
-                                }
-                        }
-                }
-
-                throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
+                return new ChargeBalanceResponse(
+                                userId, previousBalance, amount, savedBalance.getBalance(),
+                                transactionId);
         }
 
         /**
-         * 잔액 차감 - 비관적 락 사용 (정확성 우선)
+         * 잔액 차감 - 분산락 사용 (비관적 락 대체)
          */
-        @Transactional
         public void deductBalance(Long userId, BigDecimal amount, String orderId) {
-                UserBalance userBalance = userBalanceJpaRepository.findByUserIdWithPessimisticLock(userId)
-                                .orElseThrow(() -> {
-                                        log.error("잔액 차감 실패 - 사용자 잔액 없음: userId = {}", userId);
-                                        return new IllegalArgumentException("사용자 잔액을 찾을 수 없습니다.");
-                                });
-
-                userBalance.deduct(amount);
-                UserBalance savedBalance = userBalanceRepository.save(userBalance);
-
-                BalanceHistory history = BalanceHistory.createPaymentHistory(
-                                userId, amount, savedBalance.getBalance(), orderId);
-                balanceHistoryRepository.save(history);
+                // 인프라 레이어에서 트랜잭션과 함께 처리
+                userBalanceRepository.deductBalanceWithTransaction(userId, amount, orderId);
         }
 
-        @Transactional
         public void refundBalance(Long userId, BigDecimal amount, String orderId) {
                 UserBalance userBalance = userBalanceRepository.findByUserId(userId)
                                 .orElseThrow(() -> {
@@ -155,61 +107,36 @@ public class BalanceService {
         }
 
         /**
-         * 동시성 안전한 잔액 충전 (낙관적 락 실패 시 명시적 예외)
+         * 동시성 안전한 잔액 충전 (분산락 기반)
          */
-        @Transactional
         public ChargeBalanceResponse chargeBalanceWithConcurrencyControl(Long userId, BigDecimal amount) {
                 log.info("🔒 동시성 제어 잔액 충전: userId = {}, amount = {}", userId, amount);
 
-                int maxRetries = 3;
-                int attempt = 0;
+                // 분산락 환경에서는 일반 조회 사용 (동시성은 분산락이 보장)
+                UserBalance userBalance = userBalanceRepository.findByUserId(userId)
+                                .orElseGet(() -> createNewUserBalance(userId));
 
-                while (attempt < maxRetries) {
-                        try {
-                                attempt++;
+                BigDecimal previousBalance = userBalance.getBalance();
+                userBalance.charge(amount);
 
-                                // 낙관적 락으로 조회
-                                UserBalance userBalance = userBalanceJpaRepository
-                                                .findByUserIdWithOptimisticLock(userId)
-                                                .orElseGet(() -> createNewUserBalance(userId));
+                String transactionId = generateTransactionId("CHARGE");
+                UserBalance savedBalance = userBalanceRepository.save(userBalance);
 
-                                BigDecimal previousBalance = userBalance.getBalance();
-                                userBalance.charge(amount);
+                BalanceHistory history = BalanceHistory.createChargeHistory(
+                                userId, amount, savedBalance.getBalance(), transactionId);
+                balanceHistoryRepository.save(history);
 
-                                String transactionId = generateTransactionId("CHARGE");
-                                UserBalance savedBalance = userBalanceRepository.save(userBalance);
+                log.info("✅ 동시성 제어 잔액 충전 완료: userId = {}, 최종잔액 = {}",
+                                userId, savedBalance.getBalance());
 
-                                BalanceHistory history = BalanceHistory.createChargeHistory(
-                                                userId, amount, savedBalance.getBalance(), transactionId);
-                                balanceHistoryRepository.save(history);
-
-                                return new ChargeBalanceResponse(
-                                                userId, previousBalance, amount, savedBalance.getBalance(),
-                                                transactionId);
-
-                        } catch (OptimisticLockingFailureException e) {
-                                if (attempt >= maxRetries) {
-                                        log.error("❌ 최대 재시도 횟수 초과: userId = {}", userId);
-                                        throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
-                                }
-
-                                // 짧은 대기 후 재시도
-                                try {
-                                        Thread.sleep(50 * attempt); // 백오프
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
-                                }
-                        }
-                }
-
-                throw new BalanceConcurrencyException(ErrorCode.BALANCE_CONCURRENCY_ERROR);
+                return new ChargeBalanceResponse(
+                                userId, previousBalance, amount, savedBalance.getBalance(),
+                                transactionId);
         }
 
         /**
          * 새 사용자 잔액 생성 (내부용)
          */
-        @Transactional
         private UserBalance createNewUserBalance(Long userId) {
                 UserBalance newBalance = new UserBalance(userId);
                 return userBalanceRepository.save(newBalance);
