@@ -35,6 +35,14 @@ public interface ProductRepository {
     List<Product> findAll();
 
     /**
+     * 여러 ID로 상품 목록 조회 (랭킹 시스템용)
+     * 
+     * @param ids 상품 ID 목록
+     * @return 해당하는 상품 목록
+     */
+    List<Product> findAllById(List<Long> ids);
+
+    /**
      * 상품 저장 (생성 또는 수정)
      * 
      * @param product 저장할 상품

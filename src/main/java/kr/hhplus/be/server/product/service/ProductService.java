@@ -48,6 +48,20 @@ public class ProductService implements Lockable {
         return convertToResponse(product);
     }
 
+    /**
+     * 상품 ID 목록으로 상품 정보 일괄 조회 (랭킹 시스템용)
+     */
+    public List<ProductResponse> getProductsByIds(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<Product> products = productRepository.findAllById(productIds);
+        return products.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+
     public List<ProductResponse> searchProductsByName(String name) {
         if (name == null || name.trim().isEmpty()) {
             return getAllProducts();
