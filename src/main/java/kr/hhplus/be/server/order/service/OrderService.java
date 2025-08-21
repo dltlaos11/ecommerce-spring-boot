@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import kr.hhplus.be.server.common.exception.ErrorCode;
@@ -19,6 +20,7 @@ import kr.hhplus.be.server.order.dto.CreateOrderRequest;
 import kr.hhplus.be.server.order.dto.OrderItemRequest;
 import kr.hhplus.be.server.order.dto.OrderItemResponse;
 import kr.hhplus.be.server.order.dto.OrderResponse;
+import kr.hhplus.be.server.order.event.OrderCompletedEvent;
 import kr.hhplus.be.server.order.exception.OrderNotFoundException;
 import kr.hhplus.be.server.order.repository.OrderItemRepository;
 import kr.hhplus.be.server.order.repository.OrderRepository;
@@ -38,6 +40,7 @@ public class OrderService {
         private final OrderItemRepository orderItemRepository;
         private final PaymentRepository paymentRepository;
         private final ProductService productService;
+        private final ApplicationEventPublisher eventPublisher;
 
         public OrderResponse createOrderWithProductInfo(CreateOrderRequest request, BigDecimal totalAmount,
                         BigDecimal discountAmount, BigDecimal finalAmount,
@@ -66,6 +69,9 @@ public class OrderService {
                 // 5. 주문 완료 처리
                 savedOrder.complete();
                 orderRepository.save(savedOrder);
+
+                // 6. 주문 완료 이벤트 발행 (랭킹 시스템용)
+                publishOrderCompletedEvents(savedOrder, orderItems);
 
                 log.info("✅ 주문 생성 완료: 주문번호 = {}, ID = {}", orderNumber, savedOrder.getId());
 
@@ -225,5 +231,35 @@ public class OrderService {
                                 order.getStatus().getCode(),
                                 order.getCreatedAt(),
                                 itemResponses);
+        }
+
+        /**
+         * 주문 완료 이벤트 발행
+         * 
+         * 각 주문 항목별로 개별 이벤트를 발행하여 상품별 랭킹 메트릭 수집
+         */
+        private void publishOrderCompletedEvents(Order order, List<OrderItem> orderItems) {
+                for (OrderItem item : orderItems) {
+                        try {
+                                OrderCompletedEvent event = new OrderCompletedEvent(
+                                        order.getId(),
+                                        order.getUserId(),
+                                        item.getProductId(),
+                                        item.getProductName(),
+                                        item.getQuantity(),
+                                        order.getCreatedAt()
+                                );
+
+                                eventPublisher.publishEvent(event);
+                                
+                                log.debug("📤 주문 완료 이벤트 발행: orderId={}, productId={}, quantity={}", 
+                                        order.getId(), item.getProductId(), item.getQuantity());
+
+                        } catch (Exception e) {
+                                log.error("❌ 주문 완료 이벤트 발행 실패: orderId={}, productId={}", 
+                                        order.getId(), item.getProductId(), e);
+                                // 이벤트 발행 실패는 주문 처리에 영향주지 않음
+                        }
+                }
         }
 }
