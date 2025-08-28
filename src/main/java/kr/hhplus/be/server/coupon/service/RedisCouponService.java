@@ -45,6 +45,15 @@ public class RedisCouponService {
     private static final String COUPON_STOCK_KEY = "coupon:stock:"; // + couponId
     private static final String COUPON_QUEUE_KEY = "coupon:queue:processing";
     private static final String REQUEST_STATUS_KEY = "coupon:request:"; // + requestId
+    
+    // Redis 타입 변환 유틸리티
+    private String toRedisString(Long value) {
+        return value != null ? value.toString() : null;
+    }
+    
+    private String toRedisString(Integer value) {
+        return value != null ? value.toString() : null;
+    }
 
     /**
      * 선착순 쿠폰 발급 요청 (비동기)
@@ -54,8 +63,8 @@ public class RedisCouponService {
      */
     public AsyncCouponIssueResponse requestCouponIssueAsync(AsyncCouponIssueRequest request) {
         String requestId = UUID.randomUUID().toString();
-        Long userId = request.getUserId();
-        Long couponId = request.getCouponId();
+        Long userId = request.userId();
+        Long couponId = request.couponId();
         LocalDateTime requestedAt = LocalDateTime.now();
 
         log.info("🎫 비동기 쿠폰 발급 요청: requestId={}, userId={}, couponId={}",
@@ -129,7 +138,7 @@ public class RedisCouponService {
         String stockKey = COUPON_STOCK_KEY + couponId;
         Integer remainingStock = coupon.getRemainingQuantity();
 
-        redisTemplate.opsForValue().set(stockKey, remainingStock.toString(), Duration.ofDays(30));
+        redisTemplate.opsForValue().set(stockKey, toRedisString(remainingStock), Duration.ofDays(30));
 
         log.info("🔄 쿠폰 재고 Redis 초기화: couponId={}, stock={}", couponId, remainingStock);
     }
@@ -140,7 +149,7 @@ public class RedisCouponService {
     private void validateFromRedis(Long userId, Long couponId) {
         // 중복 발급 체크 (O(1) 연산)
         String issuedKey = COUPON_ISSUED_KEY + couponId;
-        if (redisTemplate.opsForSet().isMember(issuedKey, userId.toString())) {
+        if (redisTemplate.opsForSet().isMember(issuedKey, toRedisString(userId))) {
             log.warn("❌ 중복 발급 방지: userId={}, couponId={}", userId, couponId);
             throw new CouponAlreadyIssuedException(ErrorCode.COUPON_ALREADY_ISSUED);
         }
@@ -182,7 +191,7 @@ public class RedisCouponService {
      */
     private void markAsIssued(Long userId, Long couponId) {
         String issuedKey = COUPON_ISSUED_KEY + couponId;
-        redisTemplate.opsForSet().add(issuedKey, userId.toString());
+        redisTemplate.opsForSet().add(issuedKey, toRedisString(userId));
         redisTemplate.expire(issuedKey, Duration.ofDays(30)); // TTL 설정
     }
 
@@ -232,7 +241,7 @@ public class RedisCouponService {
 
             // 발급 표시 제거
             String issuedKey = COUPON_ISSUED_KEY + couponId;
-            redisTemplate.opsForSet().remove(issuedKey, userId.toString());
+            redisTemplate.opsForSet().remove(issuedKey, toRedisString(userId));
 
             log.debug("🔄 Redis 상태 롤백: userId={}, couponId={}", userId, couponId);
 

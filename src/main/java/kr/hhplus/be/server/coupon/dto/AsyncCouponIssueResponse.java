@@ -1,25 +1,18 @@
 package kr.hhplus.be.server.coupon.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-
 import java.time.LocalDateTime;
 
 /**
  * 비동기 쿠폰 발급 응답 DTO
  */
-@Getter
-@NoArgsConstructor
-@AllArgsConstructor
-public class AsyncCouponIssueResponse {
-    
-    private String requestId;           // 요청 추적 ID
-    private String status;              // 요청 상태 (PENDING, PROCESSING, COMPLETED, FAILED)
-    private String message;             // 상태 메시지
-    private LocalDateTime requestedAt;  // 요청 시간
-    private LocalDateTime completedAt;  // 완료 시간 (완료된 경우)
-    private Long issuedCouponId;       // 발급된 쿠폰 ID (성공한 경우)
+public record AsyncCouponIssueResponse(
+    String requestId,           // 요청 추적 ID
+    String status,              // 요청 상태 (PENDING, PROCESSING, COMPLETED, FAILED)
+    String message,             // 상태 메시지
+    LocalDateTime requestedAt,  // 요청 시간
+    LocalDateTime completedAt,  // 완료 시간 (완료된 경우)
+    Long issuedCouponId        // 발급된 쿠폰 ID (성공한 경우)
+) {
     
     public static AsyncCouponIssueResponse pending(String requestId, LocalDateTime requestedAt) {
         return new AsyncCouponIssueResponse(

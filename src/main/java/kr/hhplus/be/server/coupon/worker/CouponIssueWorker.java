@@ -44,12 +44,18 @@ public class CouponIssueWorker {
     private static final String COUPON_QUEUE_KEY = "coupon:queue:processing";
     private static final String REQUEST_STATUS_KEY = "coupon:request:";
     private static final int MAX_RETRY_COUNT = 3;
+    
+    // 스케줄링 관련 상수
+    private static final int PROCESSING_DELAY_MS = 1000; // 1초마다 처리
+    private static final int MONITORING_INTERVAL_MS = 30000; // 30초마다 모니터링
+    private static final long RETRY_DELAY_MS = 60000; // 1분 후 재시도
+    private static final int QUEUE_OVERLOAD_THRESHOLD = 1000; // 큐 과부하 기준
 
     /**
      * 스케줄러 기반 큐 처리
      * 1초마다 큐에서 하나씩 요청을 꺼내어 처리
      */
-    @Scheduled(fixedDelay = 1000) // 1초마다 처리
+    @Scheduled(fixedDelay = PROCESSING_DELAY_MS) // 1초마다 처리
     public void processCouponIssueQueue() {
         try {
             // ✅ 안전성: 하나씩 처리 (popMin으로 원자적 제거)
@@ -69,7 +75,7 @@ public class CouponIssueWorker {
                     log.error("❌ 요청 처리 실패, 재시도 예약: error={}", e.getMessage());
 
                     // ✅ 실패 시 재시도를 위해 큐에 다시 추가 (1분 후)
-                    double retryScore = System.currentTimeMillis() + 60000; // 1분 후 재시도
+                    double retryScore = System.currentTimeMillis() + RETRY_DELAY_MS; // 1분 후 재시도
                     redisTemplate.opsForZSet().add(COUPON_QUEUE_KEY, requestJson, retryScore);
                 }
             }
@@ -194,7 +200,7 @@ public class CouponIssueWorker {
     /**
      * 큐 상태 모니터링 (운영용)
      */
-    @Scheduled(fixedRate = 30000) // 30초마다
+    @Scheduled(fixedRate = MONITORING_INTERVAL_MS) // 30초마다
     public void monitorQueueHealth() {
         try {
             Long queueSize = redisTemplate.opsForZSet().zCard(COUPON_QUEUE_KEY);
@@ -203,7 +209,7 @@ public class CouponIssueWorker {
                 log.info("📊 쿠폰 발급 큐 상태: 대기 중인 요청 수={}", queueSize);
 
                 // 큐가 너무 길어지면 경고
-                if (queueSize > 1000) {
+                if (queueSize > QUEUE_OVERLOAD_THRESHOLD) {
                     log.warn("⚠️ 쿠폰 발급 큐 과부하: 대기 중인 요청 수={}", queueSize);
                 }
             }

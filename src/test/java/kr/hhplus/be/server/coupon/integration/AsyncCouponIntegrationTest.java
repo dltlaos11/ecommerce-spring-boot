@@ -87,9 +87,9 @@ class AsyncCouponIntegrationTest {
 
         // Then
         assertThat(response).isNotNull();
-        assertThat(response.getStatus()).isEqualTo("PENDING");
-        assertThat(response.getRequestId()).isNotNull();
-        assertThat(response.getRequestedAt()).isNotNull();
+        assertThat(response.status()).isEqualTo("PENDING");
+        assertThat(response.requestId()).isNotNull();
+        assertThat(response.requestedAt()).isNotNull();
 
         // 큐에 요청이 추가되었는지 확인
         Long queueSize = redisCouponService.getQueueSize();
@@ -109,7 +109,7 @@ class AsyncCouponIntegrationTest {
 
         // 비동기 요청 추가
         AsyncCouponIssueResponse response = redisCouponService.requestCouponIssueAsync(request);
-        String requestId = response.getRequestId();
+        String requestId = response.requestId();
 
         // When: 워커가 큐를 처리
         couponIssueWorker.processCouponIssueQueue();
@@ -120,9 +120,9 @@ class AsyncCouponIntegrationTest {
 
         // 요청 상태가 완료로 변경되었는지 확인
         AsyncCouponIssueResponse finalStatus = redisCouponService.getRequestStatus(requestId);
-        assertThat(finalStatus.getStatus()).isEqualTo("COMPLETED");
-        assertThat(finalStatus.getIssuedCouponId()).isNotNull();
-        assertThat(finalStatus.getCompletedAt()).isNotNull();
+        assertThat(finalStatus.status()).isEqualTo("COMPLETED");
+        assertThat(finalStatus.issuedCouponId()).isNotNull();
+        assertThat(finalStatus.completedAt()).isNotNull();
 
         // 실제 DB에 UserCoupon이 생성되었는지 확인
         boolean couponIssued = userCouponRepository.findByUserIdAndCouponId(userId, testCoupon.getId())
@@ -190,7 +190,7 @@ class AsyncCouponIntegrationTest {
 
         // When: 첫 번째 요청 성공
         AsyncCouponIssueResponse firstResponse = redisCouponService.requestCouponIssueAsync(request);
-        assertThat(firstResponse.getStatus()).isEqualTo("PENDING");
+        assertThat(firstResponse.status()).isEqualTo("PENDING");
 
         // Then: 두 번째 요청은 중복 발급 예외 발생
         org.junit.jupiter.api.Assertions.assertThrows(
@@ -225,18 +225,18 @@ class AsyncCouponIntegrationTest {
 
         // When
         AsyncCouponIssueResponse response = redisCouponService.requestCouponIssueAsync(request);
-        String requestId = response.getRequestId();
+        String requestId = response.requestId();
 
         // Then: 처리 전 상태 확인
         AsyncCouponIssueResponse status = redisCouponService.getRequestStatus(requestId);
-        assertThat(status.getStatus()).isEqualTo("PENDING");
-        assertThat(status.getRequestId()).isEqualTo(requestId);
+        assertThat(status.status()).isEqualTo("PENDING");
+        assertThat(status.requestId()).isEqualTo(requestId);
 
         // 워커가 처리한 후 상태 확인
         couponIssueWorker.processCouponIssueQueue();
 
         AsyncCouponIssueResponse finalStatus = redisCouponService.getRequestStatus(requestId);
-        assertThat(finalStatus.getStatus()).isEqualTo("COMPLETED");
-        assertThat(finalStatus.getCompletedAt()).isNotNull();
+        assertThat(finalStatus.status()).isEqualTo("COMPLETED");
+        assertThat(finalStatus.completedAt()).isNotNull();
     }
 }
