@@ -26,6 +26,8 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Coupon {
+    
+    private static final BigDecimal PERCENTAGE_DIVISOR = new BigDecimal("100");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -142,7 +144,7 @@ public class Coupon {
             discountAmount = discountValue;
         } else {
             // 정률 할인 (퍼센트)
-            discountAmount = orderAmount.multiply(discountValue).divide(new BigDecimal("100"));
+            discountAmount = orderAmount.multiply(discountValue).divide(PERCENTAGE_DIVISOR);
         }
 
         // 최대 할인 금액 제한

@@ -79,9 +79,9 @@ class RedisCouponServiceTest {
 
         // Then
         assertThat(response).isNotNull();
-        assertThat(response.getStatus()).isEqualTo("PENDING");
-        assertThat(response.getRequestId()).isNotNull();
-        assertThat(response.getMessage()).contains("대기열에 추가");
+        assertThat(response.status()).isEqualTo("PENDING");
+        assertThat(response.requestId()).isNotNull();
+        assertThat(response.message()).contains("대기열에 추가");
 
         // Redis 연산 검증
         verify(setOperations).isMember(contains("coupon:issued:"), eq("1"));
@@ -164,7 +164,8 @@ class RedisCouponServiceTest {
 
         String requestId = "test-request-id";
         String statusJson = "{\"requestId\":\"test-request-id\",\"status\":\"COMPLETED\"}";
-        AsyncCouponIssueResponse expectedResponse = new AsyncCouponIssueResponse();
+        AsyncCouponIssueResponse expectedResponse = new AsyncCouponIssueResponse(
+                requestId, "COMPLETED", "완료", null, null, null);
 
         when(valueOperations.get("coupon:request:" + requestId)).thenReturn(statusJson);
         when(objectMapper.readValue(statusJson, AsyncCouponIssueResponse.class))
