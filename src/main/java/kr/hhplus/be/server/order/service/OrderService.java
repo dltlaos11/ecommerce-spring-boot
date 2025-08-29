@@ -21,6 +21,8 @@ import kr.hhplus.be.server.order.dto.OrderItemRequest;
 import kr.hhplus.be.server.order.dto.OrderItemResponse;
 import kr.hhplus.be.server.order.dto.OrderResponse;
 import kr.hhplus.be.server.order.event.OrderCompletedEvent;
+import kr.hhplus.be.server.order.event.OrderDataPlatformEvent;
+import kr.hhplus.be.server.common.event.EventPublisher;
 import kr.hhplus.be.server.order.exception.OrderNotFoundException;
 import kr.hhplus.be.server.order.repository.OrderItemRepository;
 import kr.hhplus.be.server.order.repository.OrderRepository;
@@ -41,6 +43,7 @@ public class OrderService {
         private final PaymentRepository paymentRepository;
         private final ProductService productService;
         private final ApplicationEventPublisher eventPublisher;
+        private final EventPublisher domainEventPublisher;
 
         public OrderResponse createOrderWithProductInfo(CreateOrderRequest request, BigDecimal totalAmount,
                         BigDecimal discountAmount, BigDecimal finalAmount,
@@ -72,6 +75,9 @@ public class OrderService {
 
                 // 6. 주문 완료 이벤트 발행 (랭킹 시스템용)
                 publishOrderCompletedEvents(savedOrder, orderItems);
+                
+                // 7. 데이터 플랫폼 전송 이벤트 발행 (트랜잭션 커밋 후 비동기 처리)
+                publishOrderDataPlatformEvent(savedOrder);
 
                 log.info("✅ 주문 생성 완료: 주문번호 = {}, ID = {}", orderNumber, savedOrder.getId());
 
@@ -235,8 +241,6 @@ public class OrderService {
 
         /**
          * 주문 완료 이벤트 발행
-         * 
-         * 각 주문 항목별로 개별 이벤트를 발행하여 상품별 랭킹 메트릭 수집
          */
         private void publishOrderCompletedEvents(Order order, List<OrderItem> orderItems) {
                 for (OrderItem item : orderItems) {
@@ -251,15 +255,28 @@ public class OrderService {
                                 );
 
                                 eventPublisher.publishEvent(event);
-                                
                                 log.debug("📤 주문 완료 이벤트 발행: orderId={}, productId={}, quantity={}", 
                                         order.getId(), item.getProductId(), item.getQuantity());
 
                         } catch (Exception e) {
                                 log.error("❌ 주문 완료 이벤트 발행 실패: orderId={}, productId={}", 
                                         order.getId(), item.getProductId(), e);
-                                // 이벤트 발행 실패는 주문 처리에 영향주지 않음
                         }
+                }
+        }
+
+        /**
+         * 데이터 플랫폼 전송 이벤트 발행
+         */
+        private void publishOrderDataPlatformEvent(Order order) {
+                try {
+                        OrderDataPlatformEvent event = OrderDataPlatformEvent.from(order);
+                        domainEventPublisher.publishEventAfterCommit(event);
+                        log.debug("📤 데이터 플랫폼 전송 이벤트 발행: orderId={}, eventId={}", 
+                                order.getId(), event.getEventId());
+
+                } catch (Exception e) {
+                        log.error("❌ 데이터 플랫폼 전송 이벤트 발행 실패: orderId={}", order.getId(), e);
                 }
         }
 }
