@@ -45,6 +45,17 @@ spring:
           max-idle: 8
           min-idle: 0
 
+# Redisson용 클러스터 설정
+app:
+  redis:
+    cluster-nodes:
+      - 127.0.0.1:7001
+      - 127.0.0.1:7002
+      - 127.0.0.1:7003
+      - 127.0.0.1:7004
+      - 127.0.0.1:7005
+      - 127.0.0.1:7006
+
   cache:
     type: redis
     redis:

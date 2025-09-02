@@ -40,6 +40,12 @@ spring:
           max-idle: 4
           min-idle: 2
 
+# Redisson용 단일 인스턴스 설정
+app:
+  redis:
+    host: localhost
+    port: 6379
+
   cache:
     type: redis
     redis:
