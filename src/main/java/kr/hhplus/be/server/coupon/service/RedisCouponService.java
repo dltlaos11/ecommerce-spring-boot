@@ -10,10 +10,12 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import kr.hhplus.be.server.common.event.EventPublisher;
 import kr.hhplus.be.server.common.exception.ErrorCode;
 import kr.hhplus.be.server.coupon.domain.Coupon;
 import kr.hhplus.be.server.coupon.dto.AsyncCouponIssueRequest;
 import kr.hhplus.be.server.coupon.dto.AsyncCouponIssueResponse;
+import kr.hhplus.be.server.coupon.event.CouponIssueEvent;
 import kr.hhplus.be.server.coupon.event.CouponIssueRequestEvent;
 import kr.hhplus.be.server.coupon.exception.CouponAlreadyIssuedException;
 import kr.hhplus.be.server.coupon.exception.CouponExhaustedException;
@@ -39,18 +41,19 @@ public class RedisCouponService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final CouponRepository couponRepository;
     private final ObjectMapper objectMapper;
+    private final EventPublisher eventPublisher;
 
     // Redis 키 패턴
     private static final String COUPON_ISSUED_KEY = "coupon:issued:"; // + couponId
     private static final String COUPON_STOCK_KEY = "coupon:stock:"; // + couponId
     private static final String COUPON_QUEUE_KEY = "coupon:queue:processing";
     private static final String REQUEST_STATUS_KEY = "coupon:request:"; // + requestId
-    
+
     // Redis 타입 변환 유틸리티
     private String toRedisString(Long value) {
         return value != null ? value.toString() : null;
     }
-    
+
     private String toRedisString(Integer value) {
         return value != null ? value.toString() : null;
     }
@@ -83,9 +86,12 @@ public class RedisCouponService {
             // 3단계: 중복 발급 방지를 위해 Redis Set에 추가
             markAsIssued(userId, couponId);
 
-            // 4단계: 비동기 처리 큐에 요청 추가
-            CouponIssueRequestEvent event = CouponIssueRequestEvent.of(requestId, userId, couponId);
-            addToProcessingQueue(event);
+            // 4단계: Kafka로 쿠폰 발급 이벤트 발행 (즉시 발행)
+            CouponIssueEvent couponIssueEvent = CouponIssueEvent.create(couponId, userId, requestId);
+            eventPublisher.publishEvent(couponIssueEvent);
+
+            log.info("📤 Kafka로 쿠폰 발급 이벤트 발행: requestId={}, eventId={}",
+                    requestId, couponIssueEvent.eventId());
 
             // 5단계: 요청 상태 저장
             AsyncCouponIssueResponse response = AsyncCouponIssueResponse.pending(requestId, requestedAt);
