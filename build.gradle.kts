@@ -41,6 +41,9 @@ dependencies {
 	implementation("org.redisson:redisson-spring-boot-starter:3.24.3")
 	implementation("org.apache.commons:commons-pool2")
 	
+	// Kafka 관련 의존성
+	implementation("org.springframework.kafka:spring-kafka")
+	
 	// Swagger/OpenAPI
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0")
 	
