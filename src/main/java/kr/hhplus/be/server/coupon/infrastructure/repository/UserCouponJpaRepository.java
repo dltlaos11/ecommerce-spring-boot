@@ -26,6 +26,11 @@ public interface UserCouponJpaRepository extends JpaRepository<UserCoupon, Long>
     Optional<UserCoupon> findByUserIdAndCouponId(Long userId, Long couponId);
 
     /**
+     * 사용자별 특정 쿠폰 보유 여부 확인 (중복 발급 방지용 - Boolean)
+     */
+    boolean existsByUserIdAndCouponId(Long userId, Long couponId);
+
+    /**
      * 사용자별 사용 가능한 쿠폰 목록 조회
      */
     @Query("SELECT uc FROM UserCoupon uc WHERE uc.userId = :userId AND uc.status = 'AVAILABLE'")
