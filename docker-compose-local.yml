@@ -25,7 +25,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.2
                    --cluster-announce-port 7001
                    --cluster-announce-bus-port 17001
                    --protected-mode no
@@ -45,7 +45,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.3
                    --cluster-announce-port 7002
                    --cluster-announce-bus-port 17002
                    --protected-mode no
@@ -65,7 +65,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.4
                    --cluster-announce-port 7003
                    --cluster-announce-bus-port 17003
                    --protected-mode no
@@ -85,7 +85,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.5
                    --cluster-announce-port 7004
                    --cluster-announce-bus-port 17004
                    --protected-mode no
@@ -105,7 +105,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.6
                    --cluster-announce-port 7005
                    --cluster-announce-bus-port 17005
                    --protected-mode no
@@ -125,7 +125,7 @@ services:
                    --cluster-config-file nodes.conf
                    --cluster-node-timeout 5000
                    --appendonly yes
-                   --cluster-announce-ip 127.0.0.1
+                   --cluster-announce-ip 172.18.0.7
                    --cluster-announce-port 7006
                    --cluster-announce-bus-port 17006
                    --protected-mode no
