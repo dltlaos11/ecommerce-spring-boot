@@ -59,8 +59,34 @@ app:
   cache:
     type: redis
     redis:
-      time-to-live: 1800000  # 30분
+      time-to-live: 1800000 # 30분
       key-prefix: "ecommerce::"
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        enable.idempotence: true # 중복 메시지 방지
+        retries: 3 # 재시도 횟수
+        acks: all # 모든 복제본 확인 후 응답
+    consumer:
+      group-id: ecommerce-consumer-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "kr.hhplus.be.server.*.event"
+        auto.offset.reset: earliest # 파티션 증설 시 메시지 누락 방지
+        enable.auto.commit: true # 자동 커밋 활성화
+        auto.commit.interval.ms: 1000 # 1초마다 커밋
+        heartbeat.interval.ms: 3000 # 하트비트 간격
+        session.timeout.ms: 10000 # 세션 타임아웃 (하트비트의 3배)
+        request.timeout.ms: 30000 # 요청 타임아웃
+        fetch.min.bytes: 1 # 최소 fetch 크기
+        fetch.max.bytes: 52428800 # 최대 fetch 크기 (50MB)
+        fetch.max.wait.ms: 500 # fetch 대기 시간
+        max.poll.records: 500 # 한 번에 poll할 최대 레코드 수
 
 springdoc:
   api-docs:
