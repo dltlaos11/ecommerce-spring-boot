@@ -1,5 +1,6 @@
 package kr.hhplus.be.server.config.redis;
 
+import java.util.Map;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
@@ -47,7 +48,16 @@ public class RedissonConfig {
                     .setTimeout(3000)
                     .setRetryAttempts(3)
                     .setRetryInterval(1500)
-                    .setCheckSlotsCoverage(false); // 불완전한 클러스터에서도 작동
+                    .setCheckSlotsCoverage(false) // 불완전한 클러스터에서도 작동
+                    // Docker 내부 IP를 외부 접근 가능한 IP로 매핑 (NAT)
+                    .setNatMap(Map.of(
+                        "172.18.0.2:7001", "127.0.0.1:7001",
+                        "172.18.0.3:7002", "127.0.0.1:7002", 
+                        "172.18.0.4:7003", "127.0.0.1:7003",
+                        "172.18.0.5:7004", "127.0.0.1:7004",
+                        "172.18.0.6:7005", "127.0.0.1:7005",
+                        "172.18.0.7:7006", "127.0.0.1:7006"
+                    ));
         } else {
             // 단일 인스턴스 설정 (테스트 환경)
             config.useSingleServer()
