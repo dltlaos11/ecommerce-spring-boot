@@ -43,6 +43,12 @@ public class UserCouponRepositoryJpaImpl implements UserCouponRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public boolean existsByUserIdAndCouponId(Long userId, Long couponId) {
+        return jpaRepository.existsByUserIdAndCouponId(userId, couponId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<UserCoupon> findAvailableCouponsByUserId(Long userId) {
         return jpaRepository.findAvailableCouponsByUserId(userId);
     }
