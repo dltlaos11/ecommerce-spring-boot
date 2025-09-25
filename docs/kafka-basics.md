@@ -38,6 +38,16 @@ Apache Kafka는 실시간 스트리밍 데이터를 위한 **분산 이벤트 �
 브로커-3: order-completed-partition-2 (Leader)
 ```
 
+**리더-팔로워 관계와 ISR(In-Sync Replica)**:
+
+- **Leader Replica**: 해당 파티션의 읽기/쓰기 요청을 실제로 처리하는 브로커
+- **Follower Replica**: Leader로부터 데이터를 복제받아 저장하는 브로커
+  - 평소에는 클라이언트 읽기 요청에 관여하지 않음
+  - 하지만 `acks` 설정에 따라 **쓰기 요청 응답에는 관여**할 수 있음
+- **ISR(In-Sync Replica)**: Leader와 동기화 상태를 유지하는 Replica들
+  - `acks=all` 설정 시 ISR에 속한 모든 Replica가 메시지를 받아야 Producer에게 응답
+  - Follower가 지연되면 ISR에서 제외되고, 복구되면 다시 ISR에 포함
+
 ### 2.2 Topic (토픽)
 
 **역할**: 메시지를 분류하는 논리적 카테고리 (데이터베이스의 테이블과 유사)
@@ -498,6 +508,11 @@ kafka:
       retries: 3 # 재시도 횟수
       acks: all # 모든 복제본 확인 후 응답
 ```
+
+**Producer Idempotence 설정**:
+- `enable.idempotence=true`: 네트워크 장애 등으로 동일한 메시지가 중복 발행되는 것을 방지
+- Producer가 내부적으로 시퀀스 번호를 관리하여 브로커에서 중복 메시지 제거
+- `acks=all`과 함께 사용하여 at-least-once 보장하면서 중복 방지
 
 ### 6.2 Consumer 설정
 
