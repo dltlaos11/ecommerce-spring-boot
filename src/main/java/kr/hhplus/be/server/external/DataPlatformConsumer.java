@@ -23,12 +23,11 @@ public class DataPlatformConsumer {
     /**
      * 주문 완료 이벤트 처리
      * 
-     * 멘토링 핵심 원칙:
      * - Consumer는 반드시 멱등성을 보장해야 함
      * - 처리 실패 시 자동 재시도 (Spring Kafka 기본 설정)
      * - 비즈니스 로직은 최대한 단순하게 유지
      */
-    @KafkaListener(topics = "order-completed", groupId = "data-platform-consumer-group")
+    @KafkaListener(topics = "${kafka.topics.order-completed}", groupId = "${kafka.consumer-groups.data-platform}", concurrency = "${app.kafka.listeners.data-platform.concurrency:3}")
     public void handleOrderCompleted(
             @Payload OrderDataPlatformEvent event,
             @Header(name = KafkaHeaders.RECEIVED_KEY) String key,

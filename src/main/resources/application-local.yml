@@ -62,6 +62,21 @@ app:
       time-to-live: 1800000 # 30분
       key-prefix: "ecommerce::"
 
+# Kafka 토픽 및 Consumer Group 설정
+kafka:
+  topics:
+    order-completed: "order-completed"
+    coupon-issue: "coupon-issue"
+    user-activity: "user-activity"
+    balance-activity: "balance-activity"
+    product-activity: "product-activity"
+    general-events: "general-events"
+  consumer-groups:
+    data-platform: "data-platform-consumer-group"
+    coupon-issue: "coupon-issue-consumer-group"
+    order-analytics: "order-analytics-group"
+    notification: "notification-group"
+
   kafka:
     bootstrap-servers: localhost:9092
     producer:
@@ -87,6 +102,16 @@ app:
         fetch.max.bytes: 52428800 # 최대 fetch 크기 (50MB)
         fetch.max.wait.ms: 500 # fetch 대기 시간
         max.poll.records: 500 # 한 번에 poll할 최대 레코드 수
+    # Consumer 설정을 외부화 (피드백 반영)
+    listeners:
+      data-platform:
+        topics: "${kafka.topics.order-completed:order-completed}"
+        group-id: "${kafka.consumer-groups.data-platform:data-platform-consumer-group}"
+        concurrency: 3
+      coupon-issue:
+        topics: "${kafka.topics.coupon-issue:coupon-issue}"
+        group-id: "${kafka.consumer-groups.coupon-issue:coupon-issue-consumer-group}"
+        concurrency: 3
 
 springdoc:
   api-docs:

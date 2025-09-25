@@ -36,7 +36,7 @@ public class CouponIssueConsumer {
      * - 쿠폰ID를 키로 사용하여 동일 쿠폰은 같은 파티션으로
      * - 단일 쿠폰의 순서 보장 (선착순 보장)
      */
-    @KafkaListener(topics = "coupon-issue", groupId = "coupon-issue-consumer-group")
+    @KafkaListener(topics = "${kafka.topics.coupon-issue}", groupId = "${kafka.consumer-groups.coupon-issue}", concurrency = "${app.kafka.listeners.coupon-issue.concurrency:3}")
     @Transactional
     public void handleCouponIssue(
             @Payload CouponIssueEvent event,
@@ -84,8 +84,8 @@ public class CouponIssueConsumer {
     /**
      * 중복 발급 체크 (멱등성 보장)
      * 
-     * 종범 멘토 권장: 쿠폰ID + 유저ID로 중복 방지
-     * "이미 발급받은 사용자면 '있어'라고 단순 응답"
+     * 쿠폰ID + 유저ID로 중복 방지
+     * 이미 발급받은 사용자면 '있어'라고 단순 응답
      */
     private boolean isAlreadyIssued(Long couponId, Long userId) {
         return userCouponRepository.existsByUserIdAndCouponId(userId, couponId);
@@ -94,7 +94,7 @@ public class CouponIssueConsumer {
     /**
      * Consumer 성능 모니터링 로그
      * 
-     * 로이 멘토 강조: "Consumer Lag 모니터링 필수"
+     * "Consumer Lag 모니터링 필수"
      */
     private void logProcessingMetrics(CouponIssueEvent event, int partition, long offset) {
         long processingDelay = System.currentTimeMillis() -

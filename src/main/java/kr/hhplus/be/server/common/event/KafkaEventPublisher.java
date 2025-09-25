@@ -1,14 +1,19 @@
 package kr.hhplus.be.server.common.event;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Primary;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import kr.hhplus.be.server.common.config.KafkaTopics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -53,11 +58,15 @@ public class KafkaEventPublisher implements EventPublisher {
         log.info("🚀 Kafka 비동기 이벤트 발행: type={}, eventId={}",
                 event.getEventType(), event.getEventId());
 
-        sendToKafka(event);
+        sendToKafkaAsync(event);
     }
 
     /**
-     * 실제 Kafka 전송 로직
+     * 실제 Kafka 전송 로직 (발송 보장 개선)
+     *
+     * 피드백 반영:
+     * - KafkaTemplate.send는 CompletableFuture를 리턴하므로 발송을 보장하지 않음
+     * - 동기 전송 또는 콜백을 통한 결과 처리로 발송 보장
      */
     private void sendToKafka(DomainEvent event) {
         try {
@@ -75,17 +84,65 @@ public class KafkaEventPublisher implements EventPublisher {
                     .setHeader("occurredOn", event.getOccurredAt().toString())
                     .build();
 
-            kafkaTemplate.send(message);
+            // 동기 전송으로 발송 보장 (타임아웃 5초)
+            SendResult<String, Object> result = kafkaTemplate.send(message)
+                    .get(5, TimeUnit.SECONDS);
 
-            log.info("✅ Kafka 발행 성공: topic={}, key={}, eventId={}",
-                    topicName, partitionKey, event.getEventId());
+            log.info("✅ Kafka 발행 성공: topic={}, partition={}, offset={}, key={}, eventId={}",
+                    topicName,
+                    result.getRecordMetadata().partition(),
+                    result.getRecordMetadata().offset(),
+                    partitionKey,
+                    event.getEventId());
 
         } catch (Exception e) {
             log.error("💥 Kafka 발행 실패: eventType={}, eventId={}",
                     event.getEventType(), event.getEventId(), e);
 
-            // SDLQ 처리로 개선 예정
-            throw new RuntimeException("Kafka 이벤트 발행 실패", e);
+            // 발송 실패 시 예외 발생 (상위 서비스에서 처리)
+            throw new RuntimeException("Kafka 이벤트 발행 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 비동기 Kafka 전송 로직 (CompletableFuture 기반 결과 처리)
+     */
+    private void sendToKafkaAsync(DomainEvent event) {
+        try {
+            String topicName = generateTopicName(event.getEventType());
+            String partitionKey = generatePartitionKey(event);
+
+            // Kafka 메시지 구성 (메타데이터 포함)
+            Message<DomainEvent> message = MessageBuilder
+                    .withPayload(event)
+                    .setHeader(KafkaHeaders.TOPIC, topicName)
+                    .setHeader(KafkaHeaders.KEY, partitionKey)
+                    .setHeader("eventId", event.getEventId())
+                    .setHeader("eventType", event.getEventType())
+                    .setHeader("aggregateId", event.getAggregateId())
+                    .setHeader("occurredOn", event.getOccurredAt().toString())
+                    .build();
+
+            // CompletableFuture를 통한 비동기 결과 처리
+            CompletableFuture<SendResult<String, Object>> future = kafkaTemplate.send(message);
+
+            future.whenComplete((result, failure) -> {
+                if (failure != null) {
+                    log.error("💥 Kafka 비동기 발행 실패: eventType={}, eventId={}",
+                            event.getEventType(), event.getEventId(), failure);
+                } else {
+                    log.info("✅ Kafka 비동기 발행 성공: topic={}, partition={}, offset={}, key={}, eventId={}",
+                            topicName,
+                            result.getRecordMetadata().partition(),
+                            result.getRecordMetadata().offset(),
+                            partitionKey,
+                            event.getEventId());
+                }
+            });
+
+        } catch (Exception e) {
+            log.error("💥 Kafka 비동기 발행 준비 실패: eventType={}, eventId={}",
+                    event.getEventType(), event.getEventId(), e);
         }
     }
 
@@ -94,12 +151,12 @@ public class KafkaEventPublisher implements EventPublisher {
      */
     private String generateTopicName(String eventType) {
         return switch (eventType) {
-            case "ORDER_COMPLETED", "ORDER_COMPLETED_FOR_DATA_PLATFORM" -> "order-completed";
-            case "COUPON_ISSUED" -> "coupon-issue";
-            case "USER_ACTIVITY" -> "user-activity";
-            case "BALANCE_CHARGED" -> "balance-activity";
-            case "PRODUCT_STOCK_CHANGED" -> "product-activity";
-            default -> "general-events";
+            case "ORDER_COMPLETED", "ORDER_COMPLETED_FOR_DATA_PLATFORM" -> KafkaTopics.ORDER_COMPLETED;
+            case "COUPON_ISSUED" -> KafkaTopics.COUPON_ISSUE;
+            case "USER_ACTIVITY" -> KafkaTopics.USER_ACTIVITY;
+            case "BALANCE_CHARGED" -> KafkaTopics.BALANCE_ACTIVITY;
+            case "PRODUCT_STOCK_CHANGED" -> KafkaTopics.PRODUCT_ACTIVITY;
+            default -> KafkaTopics.GENERAL_EVENTS;
         };
     }
 
